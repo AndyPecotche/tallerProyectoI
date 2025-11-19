@@ -10,6 +10,7 @@ typedef enum {
    REPOSO,
    LEER_PIN,
    VALIDAR,
+   SENSOR_CIERRE,
    BLOQUEADO,
    MENU_ADMIN,
    REGISTRAR_RFID,
