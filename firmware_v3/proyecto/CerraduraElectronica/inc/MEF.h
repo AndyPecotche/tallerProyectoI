@@ -2,9 +2,9 @@
 #define MEF_H_
 
 #include <stdbool.h>
-
+#include "stepperMotor.h"
 /* ---------------------------------------------------------------------------
-   Definición de estados de la MEF principal
+   DefiniciÃ³n de estados de la MEF principal
 --------------------------------------------------------------------------- */
 typedef enum {
    REPOSO,
@@ -17,7 +17,7 @@ typedef enum {
 } EstadoMEF_t;
 
 /* ---------------------------------------------------------------------------
-   Prototipos públicos
+   Prototipos pÃºblicos
 --------------------------------------------------------------------------- */
 void mefInit(void);
 void mefUpdate(void);
