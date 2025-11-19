@@ -95,7 +95,7 @@ void mefUpdate(void){
                   printf("\r\n[ACCESO] CORRECTO\r\n");
                   alertaExito();
                   intentosFallidos = 0;
-                  step_move(ON);
+                  step_move(ON); //Gira 1 vuelta en sentido antihorario(Abrir)
                   estadoActual = SENSOR_CIERRE;
                }
             } else {
@@ -116,7 +116,7 @@ void mefUpdate(void){
          case SENSOR_CIERRE:
                //Checkea el sensor y cierra en caso que este en bajo.
 		          if(!gpioRead(SENSOR_PIN)){
-			           step_move(OFF); //Gira 1 vuelta en sentido horario
+			           step_move(OFF); //Gira 1 vuelta en sentido horario(Cerrar)
                     estadoActual = REPOSO;
 		          }
             break;
