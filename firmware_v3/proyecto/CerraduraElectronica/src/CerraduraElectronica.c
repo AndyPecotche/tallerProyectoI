@@ -3,7 +3,7 @@
 
 int main(void){
     mefInit();
-
+    driverConfig();
     while(true){
         mefUpdate();
     }
