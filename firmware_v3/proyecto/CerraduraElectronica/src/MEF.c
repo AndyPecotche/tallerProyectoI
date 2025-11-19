@@ -16,9 +16,11 @@ static int intentosFallidos = 0;
 
 #define MAX_INTENTOS   3
 #define TIMEOUT_MS     10000  // 10 segundos para ingresar PIN
+#define SENSOR_PIN GPIO5
+bool_t open = false;
 
 /* ---------------------------------------------------------------------------
-   Interrupci髇 simulada: TEC1 activa el modo teclado
+   Interrupci贸n simulada: TEC1 activa el modo teclado
 --------------------------------------------------------------------------- */
 volatile bool eventoTeclado = false;
 
@@ -28,7 +30,7 @@ void GPIO0_IRQHandler(void){
 }
 
 /* ---------------------------------------------------------------------------
-   Configuraci髇 de interrupci髇 en TEC1
+   Configuraci贸n de interrupci贸n en TEC1
 --------------------------------------------------------------------------- */
 static void configurarInterrupcionTEC1(void){
     Chip_PININT_Init(LPC_GPIO_PIN_INT);
@@ -41,20 +43,21 @@ static void configurarInterrupcionTEC1(void){
 }
 
 /* ---------------------------------------------------------------------------
-   Inicializaci髇 de la MEF
+   Inicializaci贸n de la MEF
 --------------------------------------------------------------------------- */
 void mefInit(void){
    boardConfig();
    tecladoInit();
    alertasInit();
    configurarInterrupcionTEC1();
+   gpioConfig(SENSOR_PIN, GPIO_INPUT_PULLUP);
    estadoActual = REPOSO;
    intentosFallidos = 0;
-   printf("\r\n[SISTEMA] Cerradura electr髇ica iniciada.\r\n");
+   printf("\r\n[SISTEMA] Cerradura electr贸nica iniciada.\r\n");
 }
 
 /* ---------------------------------------------------------------------------
-   Actualizaci髇 de la MEF
+   Actualizaci贸n de la MEF
 --------------------------------------------------------------------------- */
 void mefUpdate(void){
     static uint32_t tiempoInicio = 0;
@@ -62,13 +65,14 @@ void mefUpdate(void){
     switch(estadoActual){
 
         case REPOSO:
-            if(eventoTeclado){
+            if((eventoTeclado){
                 eventoTeclado = false;
                 tecladoReset();
                 tiempoInicio = tickRead();
-                printf("\r\n[EVENTO] Ingrese PIN de 5 d韌itos\r\n");
+                printf("\r\n[EVENTO] Ingrese PIN de 5 d铆gitos\r\n");
                 estadoActual = LEER_PIN;
             }
+         
             __WFI(); // bajo consumo
             break;
 
@@ -81,7 +85,7 @@ void mefUpdate(void){
                 estadoActual = REPOSO;
             }
             break;
-
+         
         case VALIDAR:
             if (validarPin(pinIngresado)){
                if (esPinMaestro(pinIngresado)){
@@ -91,24 +95,32 @@ void mefUpdate(void){
                   printf("\r\n[ACCESO] CORRECTO\r\n");
                   alertaExito();
                   intentosFallidos = 0;
-                  // accionarMotorApertura();
-                  estadoActual = REPOSO;
+                  step_move(ON);
+                  estadoActual = SENSOR_CIERRE;
                }
             } else {
                alertaError();
                intentosFallidos++;
                printf("\r\n[ACCESO] DENEGADO (%d/%d)\r\n",intentosFallidos, MAX_INTENTOS);
                tiempoInicio = tickRead();
-                if(intentosFallidos >= MAX_INTENTOS){
-                    printf("\r\n[BLOQUEO] 3 intentos mal - Cerradura bloqueada temporalmente\r\n");
-                    estadoActual = BLOQUEADO;
-                } else {
-                    tecladoReset();
-                    estadoActual = LEER_PIN;
-                }
+               if(intentosFallidos >= MAX_INTENTOS){
+                  printf("\r\n[BLOQUEO] 3 intentos mal - Cerradura bloqueada temporalmente\r\n");
+                  estadoActual = BLOQUEADO;
+               } else {
+                  tecladoReset();
+                  estadoActual = LEER_PIN;
+               }
             }
             break;
-
+   
+         case SENSOR_CIERRE:
+               //Checkea el sensor y cierra en caso que este en bajo.
+		          if(!gpioRead(SENSOR_PIN)){
+			           step_move(OFF); //Gira 1 vuelta en sentido horario
+                    estadoActual = REPOSO;
+		          }
+            break;
+   
          case BLOQUEADO:
             if(tickRead() - tiempoInicio > 10000){
                 printf("\r\n[SISTEMA] Bloqueo finalizado\r\n");
@@ -137,7 +149,7 @@ void mefUpdate(void){
                     estadoActual = REGISTRAR_HUELLA;
                     break;
                 default:
-                    printf("\r\n[ADMIN] Opci髇 inv醠ida\r\n");
+                    printf("\r\n[ADMIN] Opci贸n inv谩lida\r\n");
                     estadoActual = REPOSO;
                     break;
             }
@@ -145,20 +157,20 @@ void mefUpdate(void){
 
         case REGISTRAR_RFID: {
             printf("\r\n[ADMIN] Registrar nuevo RFID\r\n");
-            printf("Ingrese PIN v醠ido asociado al usuario:\r\n");
+            printf("Ingrese PIN v谩lido asociado al usuario:\r\n");
 
             char pinValidado[6] = {0};
             while (!tecladoLeerPin(pinValidado)) delay(50);
 
             if (validarPin(pinValidado)) {
-                printf("\r\nIngrese c骴igo RFID (simulado):\r\n");
+                printf("\r\nIngrese c贸digo RFID (simulado):\r\n");
                 //char nuevoRFID[20];
                 //scanf("%s", nuevoRFID); // simulado desde consola UART
                 //asociarRFIDaPin(pinValidado, nuevoRFID);
                 delay(100);
                 printf("\r\nRFID GUARDADO\r\n");
             } else {
-                printf("\r\n[ERROR] PIN inv醠ido\r\n");
+                printf("\r\n[ERROR] PIN inv谩lido\r\n");
             }
 
             estadoActual = REPOSO;
@@ -167,7 +179,7 @@ void mefUpdate(void){
 
         case REGISTRAR_HUELLA: {
             printf("\r\n[ADMIN] Registrar nueva huella\r\n");
-            printf("Ingrese PIN v醠ido asociado al usuario:\r\n");
+            printf("Ingrese PIN v谩lido asociado al usuario:\r\n");
 
             char pinValidado[6] = {0};
             while (!tecladoLeerPin(pinValidado)) delay(50);
@@ -179,7 +191,7 @@ void mefUpdate(void){
                // asociarHuellaaPin(pinValidado, nuevaHuella);
                 printf("\r\nHUELLA GUARDADO\r\n");
             } else {
-                printf("\r\n[ERROR] PIN inv醠ido\r\n");
+                printf("\r\n[ERROR] PIN inv谩lido\r\n");
             }
 
             estadoActual = REPOSO;
