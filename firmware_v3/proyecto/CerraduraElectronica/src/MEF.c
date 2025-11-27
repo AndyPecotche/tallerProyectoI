@@ -65,7 +65,7 @@ void mefUpdate(void){
     switch(estadoActual){
 
         case REPOSO:
-            if((eventoTeclado){
+            if(eventoTeclado){
                 eventoTeclado = false;
                 tecladoReset();
                 tiempoInicio = tickRead();
