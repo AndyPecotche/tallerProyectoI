@@ -52,9 +52,9 @@ Mkfile.old
 dkms.conf
 
 # Eclipse files
-.settings/
-.cproject
-.project
+#.settings/
+#.cproject
+#.project
 
 # Program output folders
 out/
