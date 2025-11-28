@@ -1,17 +1,6 @@
-[![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause) [![Build Status](https://travis-ci.com/epernia/firmware_v3.svg?branch=master)](https://travis-ci.com/epernia/firmware_v3) (Travis CI status)
-
-# Framework for Embedded Systems Firmware development in C/C++ 
-
-## IMPORTANT
-
-**This environment is under construction!!**
-
-**Always use the [released versions](../../releases) because in these all examples are tested and the API documentation is consistent. The master branch may contain inconsistencies because this environment is currently under development. See the Travis CI tag above to know the status of this repository.**
-
-## About firmware_v3
-
-**firmware_v3** is a makefile-based project that act as a framework for Embedded Systems firmware development in C/C++ language. It support toolchain, libraries and examples for several platforms.
-
-- [More information in english](documentation/firmware/readme/readme-en.md).
-- [Más información en español](documentation/firmware/readme/readme-es.md).
-
+# Pasos 
+1. Teniendo un workspace funcioal en eclipse, apuntando a un firmware_v3 ya funcionando, dirigirse a la carpeta donde se encuentra el mismo en el sistema.
+1. Una vez en el directorio donde se encuentra el proyecto con un nombre como "firmware_v3-r1.3.0" o "firmware_v3" o "firmware_v3-master", eliminar o mover o renombrar esa carpeta a otro lado.
+1. Clonar este repositorio
+1. Renombrar el directorio del repositorio clonado con el mismo nombre del directorio del paso anterior (es importante que sea exactamente el mismo).
+1. Al abrir eclipse en el workspace que se venia trabajando se deberia reconocer el nuevo proyecto con algunos cambios, pero aun funcionando los comandos de build y deploy.
