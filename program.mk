@@ -15,5 +15,7 @@
 
 # ---------- Your paths: -----------------------------------------------
 
-PROGRAM_PATH = proyecto
-PROGRAM_NAME = cerraduraElectronica
+#PROGRAM_PATH = proyecto
+#PROGRAM_NAME = cerraduraElectronica
+PROGRAM_PATH = examples/c
+PROGRAM_NAME = app
