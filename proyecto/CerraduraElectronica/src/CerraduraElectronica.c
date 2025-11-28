@@ -1,5 +1,5 @@
 #include "sapi.h"
-#include "mef.h"
+#include "MEF.h"
 
 int main(void){
     mefInit();
