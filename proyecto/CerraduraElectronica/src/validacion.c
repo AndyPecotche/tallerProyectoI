@@ -9,7 +9,7 @@
 typedef struct {
    char codigo[PIN_LENGTH + 1];
    bool activo;
-   char rfid[20];                // Código RFID asociado (opcional)
+   char rfid[20];                // Cï¿½digo RFID asociado (opcional)
    char huella[20];              // ID de huella asociada (opcional)
 } PinUsuario_t;
 
@@ -25,7 +25,7 @@ static PinUsuario_t listaPins[MAX_PINS] = {
 };
 
 /* ---------------------------------------------------------------------------
-   Validación de PIN existente
+   Validaciï¿½n de PIN existente
 --------------------------------------------------------------------------- */
 bool validarPin(const char *pin) {
     for (int i = 0; i < MAX_PINS; i++) {
@@ -39,19 +39,19 @@ bool validarPin(const char *pin) {
 /* ---------------------------------------------------------------------------
    Verifica si el PIN es el maestro
 --------------------------------------------------------------------------- */
-bool esPinMaestro(const char *pin) {
-    return strcmp(pin, "11111") == 0;
+bool esPinMenu(const char *pin) {
+    return strcmp(pin, "#####") == 0;
 }
 
 /* ---------------------------------------------------------------------------
-   Agregar un nuevo PIN (desde la app o configuración remota)
+   Agregar un nuevo PIN (desde la app o configuraciï¿½n remota)
 --------------------------------------------------------------------------- */
 bool agregarPin(const char *nuevoPin) {
     for (int i = 0; i < MAX_PINS; i++) {
         if (!listaPins[i].activo) {
             strcpy(listaPins[i].codigo, nuevoPin);
             listaPins[i].activo = true;
-            printf("\r\n[NUEVO PIN] Registrado con éxito: %s\r\n", nuevoPin);
+            printf("\r\n[NUEVO PIN] Registrado con ï¿½xito: %s\r\n", nuevoPin);
             return true;
         }
     }
@@ -66,11 +66,11 @@ bool asociarRFIDaPin(const char *pin, const char *rfid) {
     for (int i = 0; i < MAX_PINS; i++) {
         if (listaPins[i].activo && strcmp(listaPins[i].codigo, pin) == 0) {
             strcpy(listaPins[i].rfid, rfid);
-            printf("\r\n[RFID] Asociado con éxito al PIN %s\r\n", pin);
+            printf("\r\n[RFID] Asociado con ï¿½xito al PIN %s\r\n", pin);
             return true;
         }
     }
-    printf("\r\n[ERROR] No se encontró el PIN para asociar RFID\r\n");
+    printf("\r\n[ERROR] No se encontrï¿½ el PIN para asociar RFID\r\n");
     return false;
 }
 
@@ -81,10 +81,10 @@ bool asociarHuellaaPin(const char *pin, const char *huella) {
     for (int i = 0; i < MAX_PINS; i++) {
         if (listaPins[i].activo && strcmp(listaPins[i].codigo, pin) == 0) {
             strcpy(listaPins[i].huella, huella);
-            printf("\r\n[HUELLA] Asociada con éxito al PIN %s\r\n", pin);
+            printf("\r\n[HUELLA] Asociada con ï¿½xito al PIN %s\r\n", pin);
             return true;
         }
     }
-    printf("\r\n[ERROR] No se encontró el PIN para asociar huella\r\n");
+    printf("\r\n[ERROR] No se encontrï¿½ el PIN para asociar huella\r\n");
     return false;
 }

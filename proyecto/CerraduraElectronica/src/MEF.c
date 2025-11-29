@@ -14,8 +14,14 @@ static EstadoMEF_t estadoActual;
 static char pinIngresado[6];
 static int intentosFallidos = 0;
 
-#define MAX_INTENTOS   3
-#define TIMEOUT_MS     10000  // 10 segundos para ingresar PIN
+#define MAX_INTENTOS   99
+#define TIMEOUT_MS     5000  // 20 segundos para ingresar PIN
+
+#define OMITIR_SENSOR_CIERRE 1 // 1 = omitir chequeo de sensor de cierre (para pruebas)
+#define OMITIR_MOTOR 1         // 1 = omitir control de motor (para pruebas)
+#define SIMULAR_RFID_INTERRUPT 1 // 1 = simular interrupción de RFID con TEC2
+#define SIMULAR_PRESENCIA_INTERRUPT 1 // 1 = simular interrupción de HUELLA con TEC3
+
 
 // Configuración del sensor de cierre en GPIO0[1]
 #define SENSOR_GPIO_PORT 0
@@ -36,9 +42,13 @@ void GPIO0_IRQHandler(void){
 /* ---------------------------------------------------------------------------
    Configuración de interrupción en TEC1
 --------------------------------------------------------------------------- */
-static void configurarInterrupcionTEC1(void){
+static void configurarInterrupcionPRESENCIA(void){
     Chip_PININT_Init(LPC_GPIO_PIN_INT);
-    Chip_SCU_GPIOIntPinSel(0, 0, 4); // TEC1 -> GPIO0[4]
+    if (SIMULAR_PRESENCIA_INTERRUPT) {
+        Chip_SCU_GPIOIntPinSel(0, 0, 4); // TEC3 -> GPIO0[4] //PRESENCIA interrumpe en pin GPIO0[12]
+    } else {
+        Chip_SCU_GPIOIntPinSel(0, 0, 12); // PRESENCIA -> GPIO0[12]
+    }
     Chip_PININT_ClearIntStatus(LPC_GPIO_PIN_INT, PININTCH0);
     Chip_PININT_SetPinModeEdge(LPC_GPIO_PIN_INT, PININTCH0);
     Chip_PININT_EnableIntLow(LPC_GPIO_PIN_INT, PININTCH0);
@@ -46,23 +56,33 @@ static void configurarInterrupcionTEC1(void){
     NVIC_EnableIRQ(PIN_INT0_IRQn);
 }
 
+static void configurarInterrupcionRFID(void){
+    Chip_PININT_Init(LPC_GPIO_PIN_INT);
+    if (SIMULAR_RFID_INTERRUPT) {
+        // TEC2 -> GPIO0[8] //RFID interrumpe en pin GPIO2[5]
+    } else {
+        // RFID -> GPIO2[5]
+    }
+}
+
 /* ---------------------------------------------------------------------------
    Inicialización de la MEF
 --------------------------------------------------------------------------- */
 void mefInit(void){
-   boardConfig();
-   tecladoInit();
-   alertasInit();
-   configurarInterrupcionTEC1();
-   
-   // Configurar GPIO0[1] como entrada para el sensor de cierre
-   // Pin físico P0_1 mapeado a GPIO0[1] como entrada con buffer habilitado
-   Chip_SCU_PinMux(0, 1, SCU_MODE_INACT | SCU_MODE_INBUFF_EN | SCU_MODE_ZIF_DIS, FUNC0);
-   Chip_GPIO_SetPinDIRInput(LPC_GPIO_PORT, SENSOR_GPIO_PORT, SENSOR_GPIO_PIN);
-   
-   estadoActual = REPOSO;
-   intentosFallidos = 0;
-   printf("\r\n[SISTEMA] Cerradura electrónica iniciada.\r\n");
+    boardConfig();
+    tecladoInit();
+    alertasInit();
+    configurarInterrupcionPRESENCIA();
+    configurarInterrupcionRFID();
+
+    // Configurar GPIO0[1] como entrada para el sensor de cierre
+    // Pin físico P0_1 mapeado a GPIO0[1] como entrada con buffer habilitado
+    Chip_SCU_PinMux(0, 1, SCU_MODE_INACT | SCU_MODE_INBUFF_EN | SCU_MODE_ZIF_DIS, FUNC0);
+    Chip_GPIO_SetPinDIRInput(LPC_GPIO_PORT, SENSOR_GPIO_PORT, SENSOR_GPIO_PIN);
+
+    estadoActual = REPOSO;
+    intentosFallidos = 0;
+    printf("\r\n[SISTEMA] Cerradura electrónica iniciada.\r\n");
 }
 
 /* ---------------------------------------------------------------------------
@@ -75,14 +95,14 @@ void mefUpdate(void){
 
         case REPOSO:
             if(eventoTeclado){
+                printf("\r\n[EVENTO] Teclado activado\r\n");
                 eventoTeclado = false;
                 tecladoReset();
                 tiempoInicio = tickRead();
                 printf("\r\n[EVENTO] Ingrese PIN de 5 dígitos\r\n");
                 estadoActual = LEER_PIN;
             }
-         
-            __WFI(); // bajo consumo
+            __WFI(); // bajo consumo?
             break;
 
         case LEER_PIN:
@@ -96,23 +116,29 @@ void mefUpdate(void){
             break;
          
         case VALIDAR:
+            if (esPinMenu(pinIngresado)){
+                printf("\r\n CODIGO DE ACCESO A MENU \r\n");
+                estadoActual = MENU_ADMIN;
+                break;
+            }
             if (validarPin(pinIngresado)){
-               if (esPinMaestro(pinIngresado)){
-                  printf("\r\n PIN MAESTRO\r\n");
-                  estadoActual = MENU_ADMIN;
-               } else {
                   printf("\r\n[ACCESO] CORRECTO\r\n");
                   alertaExito();
                   intentosFallidos = 0;
-                  printf("\r\n[MOTOR] Abriendo cerradura...\r\n");
-                  step_move(ON); //Gira 1 vuelta en sentido antihorario(Abrir)
-                  printf("\r\n[SISTEMA] Cerradura abierta\r\n");
+                  printf("\r\n [MOTOR] Abriendo cerradura...\r\n");
+                  if (!OMITIR_MOTOR) {
+                      step_move(ON); //Gira 1 vuelta en sentido antihorario(Abrir)
+                  } else {
+                      printf("\r\n[OMITIR MOTOR] Simulando apertura de cerradura\r\n");
+                  }
+                  printf("\r\n [SISTEMA] Cerradura abierta \r\n");
+                  //Esperamos cierre de cerradura antes de volver a REPOSO
                   estadoActual = SENSOR_CIERRE;
-               }
             } else {
                alertaError();
                intentosFallidos++;
-               printf("\r\n[ACCESO] DENEGADO (%d/%d)\r\n",intentosFallidos, MAX_INTENTOS);
+               //printf("\r\n[ACCESO] DENEGADO (%d/%d)\r\n",intentosFallidos, MAX_INTENTOS);
+               printf("\r\n[ACCESO] INCORRECTO \r\n");
                tiempoInicio = tickRead();
                if(intentosFallidos >= MAX_INTENTOS){
                   printf("\r\n[BLOQUEO] 3 intentos mal - Cerradura bloqueada temporalmente\r\n");
@@ -127,18 +153,36 @@ void mefUpdate(void){
          case SENSOR_CIERRE:
                //Checkea el sensor y cierra en caso que este en bajo.
 		          // GPIO0[1] en bajo (false) indica que la puerta está cerrada
+                  if (OMITIR_SENSOR_CIERRE)
+                  {
+                    printf("\r\n[OMITIR SENSOR] Simulando deteccion de cierre en 2 segundos...\r\n");
+                    if (!OMITIR_MOTOR) {
+                        delay(2000);
+                        printf("\r\n [MOTOR] Cerrando cerradura...\r\n");
+                        step_move(OFF);
+                    } else {
+                        printf("\r\n[OMITIR MOTOR] Simulando cierre de cerradura\r\n");
+                    }                      
+                    printf("\r\n [SISTEMA] Cerradura cerrada \r\n");
+                    estadoActual = REPOSO;
+                    break;
+                  }
 		          {
 		              bool_t sensorState = Chip_GPIO_GetPinState(LPC_GPIO_PORT, SENSOR_GPIO_PORT, SENSOR_GPIO_PIN);
 		              printf("\r\n[DEBUG] Estado sensor GPIO0[1]: %d (0=bajo/cerrado, 1=alto/abierto)\r\n", sensorState);
 		              
 		              if(!sensorState){
-			               printf("\r\n[SENSOR] Puerta cerrada detectada\r\n");
-			               printf("\r\n[MOTOR] Cerrando cerradura...\r\n");
-			               step_move(OFF); //Gira 1 vuelta en sentido horario(Cerrar)
-                           printf("\r\n[SISTEMA] Cerradura cerrada\r\n");
-                           estadoActual = REPOSO;
+                        printf("\r\n[SENSOR] Puerta cerrada detectada\r\n");
+                        if (!OMITIR_MOTOR) {
+                            printf("\r\n [MOTOR] Cerrando cerradura...\r\n");
+                            step_move(OFF);
+                        } else {
+                            printf("\r\n[OMITIR MOTOR] Simulando cierre de cerradura\r\n");
+                        }
+                        printf("\r\n [SISTEMA] Cerradura cerrada \r\n");
+                        estadoActual = REPOSO;
 		              } else {
-		                  printf("\r\n[SENSOR] Esperando cierre de puerta...\r\n");
+		                  printf("\r\n [SENSOR] Esperando cierre de puerta...\r\n");
 		              }
 		              delay(500); // Delay para no saturar el puerto serie
 		          }
