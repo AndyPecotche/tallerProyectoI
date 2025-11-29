@@ -16,7 +16,11 @@ static int intentosFallidos = 0;
 
 #define MAX_INTENTOS   3
 #define TIMEOUT_MS     10000  // 10 segundos para ingresar PIN
-#define SENSOR_PIN GPIO5
+
+// Configuración del sensor de cierre en GPIO0[1]
+#define SENSOR_GPIO_PORT 0
+#define SENSOR_GPIO_PIN  1
+
 bool_t open = false;
 
 /* ---------------------------------------------------------------------------
@@ -50,7 +54,12 @@ void mefInit(void){
    tecladoInit();
    alertasInit();
    configurarInterrupcionTEC1();
-   gpioConfig(SENSOR_PIN, GPIO_INPUT_PULLUP);
+   
+   // Configurar GPIO0[1] como entrada para el sensor de cierre
+   // Pin físico P0_1 mapeado a GPIO0[1] como entrada con buffer habilitado
+   Chip_SCU_PinMux(0, 1, SCU_MODE_INACT | SCU_MODE_INBUFF_EN | SCU_MODE_ZIF_DIS, FUNC0);
+   Chip_GPIO_SetPinDIRInput(LPC_GPIO_PORT, SENSOR_GPIO_PORT, SENSOR_GPIO_PIN);
+   
    estadoActual = REPOSO;
    intentosFallidos = 0;
    printf("\r\n[SISTEMA] Cerradura electrónica iniciada.\r\n");
@@ -95,7 +104,9 @@ void mefUpdate(void){
                   printf("\r\n[ACCESO] CORRECTO\r\n");
                   alertaExito();
                   intentosFallidos = 0;
+                  printf("\r\n[MOTOR] Abriendo cerradura...\r\n");
                   step_move(ON); //Gira 1 vuelta en sentido antihorario(Abrir)
+                  printf("\r\n[SISTEMA] Cerradura abierta\r\n");
                   estadoActual = SENSOR_CIERRE;
                }
             } else {
@@ -115,9 +126,21 @@ void mefUpdate(void){
    
          case SENSOR_CIERRE:
                //Checkea el sensor y cierra en caso que este en bajo.
-		          if(!gpioRead(SENSOR_PIN)){
-			           step_move(OFF); //Gira 1 vuelta en sentido horario(Cerrar)
-                    estadoActual = REPOSO;
+		          // GPIO0[1] en bajo (false) indica que la puerta está cerrada
+		          {
+		              bool_t sensorState = Chip_GPIO_GetPinState(LPC_GPIO_PORT, SENSOR_GPIO_PORT, SENSOR_GPIO_PIN);
+		              printf("\r\n[DEBUG] Estado sensor GPIO0[1]: %d (0=bajo/cerrado, 1=alto/abierto)\r\n", sensorState);
+		              
+		              if(!sensorState){
+			               printf("\r\n[SENSOR] Puerta cerrada detectada\r\n");
+			               printf("\r\n[MOTOR] Cerrando cerradura...\r\n");
+			               step_move(OFF); //Gira 1 vuelta en sentido horario(Cerrar)
+                           printf("\r\n[SISTEMA] Cerradura cerrada\r\n");
+                           estadoActual = REPOSO;
+		              } else {
+		                  printf("\r\n[SENSOR] Esperando cierre de puerta...\r\n");
+		              }
+		              delay(500); // Delay para no saturar el puerto serie
 		          }
             break;
    

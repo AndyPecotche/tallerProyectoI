@@ -6,13 +6,19 @@
 /**Mapeo de puertos (EDU-CIAA-NXP → DRV8825)
  * EDU-CIAA    → DRV8825     → Función
  * ------------------------------------
- * GPIO8       → STEP        → Pulso de avance
- * GPIO4       → DIR         → Selección de dirección
- * GPIO0       → EN (ENABLE) → Habilitación del driver (activo en LOW)
+ * GPIO2[8]    → STEP        → Pulso de avance
+ * GPIO5[16]   → DIR         → Selección de dirección
+ * GPIO3[0]    → EN (ENABLE) → Habilitación del driver (activo en LOW)
  */
-#define STEP_PIN  GPIO8
-#define DIR_PIN   GPIO4
-#define EN_PIN    GPIO0
+// Configuración explícita de puertos GPIO
+#define STEP_GPIO_PORT 5
+#define STEP_GPIO_PIN  16
+
+#define DIR_GPIO_PORT  2
+#define DIR_GPIO_PIN   8
+
+#define EN_GPIO_PORT   3
+#define EN_GPIO_PIN    0
 
 /**Pasos por revolución del motor paso a paso (200 pasos = 1 vuelta completa)
  *
