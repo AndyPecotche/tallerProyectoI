@@ -27,6 +27,24 @@ bool validarPin(const char *pin) {
 }
 
 /* ---------------------------------------------------------------------------
+    Obtener el tag (nombre) asociado a un PIN
+    - Devuelve puntero al tag si existe y está activo
+    - Devuelve "usuario" si no hay tag, pero PIN existe
+    - Devuelve NULL si el PIN no está en la base
+--------------------------------------------------------------------------- */
+const char* obtenerTagPorPin(const char *pin) {
+    for (int i = 0; i < MAX_PINS; i++) {
+        if (listaPins[i].activo && strcmp(listaPins[i].codigo, pin) == 0) {
+            if (strlen(listaPins[i].tag) > 0) {
+                return listaPins[i].tag;
+            }
+            return "usuario";
+        }
+    }
+    return NULL;
+}
+
+/* ---------------------------------------------------------------------------
     Agregar un nuevo PIN (desde la app o configuración remota)
 --------------------------------------------------------------------------- */
 bool agregarPin(const char *nuevoPin) {
@@ -82,6 +100,24 @@ bool validarRFID(const char *rfid) {
         }
     }
     return false;
+}
+
+/* ---------------------------------------------------------------------------
+    Obtener el tag asociado a un RFID válido
+    - Devuelve puntero al tag si existe y está activo
+    - Devuelve "usuario" si no hay tag, pero RFID existe
+    - Devuelve NULL si el RFID no está en la base
+--------------------------------------------------------------------------- */
+const char* obtenerTagPorRFID(const char *rfid) {
+    for (int i = 0; i < MAX_PINS; i++) {
+        if (listaPins[i].activo && strlen(listaPins[i].rfid) > 0 && strcmp(listaPins[i].rfid, rfid) == 0) {
+            if (strlen(listaPins[i].tag) > 0) {
+                return listaPins[i].tag;
+            }
+            return "usuario";
+        }
+    }
+    return NULL;
 }
 
 bool sincronizarConServidor(void) {

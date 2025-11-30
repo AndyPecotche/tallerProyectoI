@@ -7,6 +7,8 @@
 /* Funciones principales */
 bool validarPin(const char *pin);
 bool agregarPin(const char *nuevoPin);
+const char* obtenerTagPorPin(const char *pin);
+const char* obtenerTagPorRFID(const char *rfid);
 
 /* Asociación de credenciales */
 bool asociarRFIDaPin(const char *pin, const char *rfid);

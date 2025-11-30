@@ -123,8 +123,8 @@ static size_t parsearJSONPins(const char *json, size_t jsonLen, PinUsuario_t *pi
         // Almacenar si tiene código válido
         if(strlen(pin.codigo) > 0){
             pinsOut[count++] = pin;
-            printf("\r\n[ESP][JSON] Pin[%u]: cod=%s act=%d rfid=%s tag=%s\r\n",
-                   (unsigned)(count-1), pin.codigo, pin.activo, pin.rfid, pin.tag);
+            printf("\r\n[ESP][JSON] Pin[%u]: cod=%s act=%d rfid=%s huella=%s tag=%s\r\n",
+                   (unsigned)(count-1), pin.codigo, pin.activo, pin.rfid, pin.huella, pin.tag);
         }
         
         // Avanzar al siguiente objeto

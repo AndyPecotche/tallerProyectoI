@@ -37,6 +37,38 @@ volatile bool eventoTeclado = false;     // Tecla presionada (simulada aparte si
 volatile bool eventoPresencia = false;   // Presencia detectada (GPIO0[12] o TEC3)
 volatile bool eventoRFID = false;        // Pulso de RFID (GPIO2[5] o TEC2)
 
+/* ---------------------------------------------------------------------------
+   Modo de bajo consumo profundo
+--------------------------------------------------------------------------- */
+static void entrarModoSleep(void){
+    static bool yaEnSleep = false;
+    
+    if(!yaEnSleep){
+        printf("\r\n[SLEEP] Entrando en modo de bajo consumo...\r\n");
+        printf("[SLEEP] Estado eventos - Presencia:%d RFID:%d\r\n", eventoPresencia, eventoRFID);
+        delay(100); // Dar tiempo a que se transmita el mensaje
+        
+        // Deshabilitar SysTick para evitar despertares constantes (ahorro real de energía)
+        SysTick->CTRL &= ~SysTick_CTRL_TICKINT_Msk;
+        
+        yaEnSleep = true;
+    }
+    
+    // Usar sleep mode NORMAL (no deep) para mantener clocks de GPIO/PININT activos
+    SCB->SCR &= ~SCB_SCR_SLEEPDEEP_Msk;
+    
+    __WFI(); // Wait For Interrupt - ahora solo despierta con GPIO (presencia/RFID)
+    printf("\r\n[SLEEP] Despertando de modo de bajo consumo...\r\n");
+    // Verificar inmediatamente si hay eventos GPIO
+    if(eventoPresencia || eventoRFID){
+        // Rehabilitar SysTick al despertar
+        SysTick->CTRL |= SysTick_CTRL_TICKINT_Msk;
+        
+        printf("\r\n[SLEEP] Despertado - Presencia:%d RFID:%d\r\n", eventoPresencia, eventoRFID);
+        yaEnSleep = false;
+    }
+}
+
 /* Canal 0: Presencia (vector nombrado como GPIO0_IRQHandler en este BSP) */
 void GPIO0_IRQHandler(void){
     Chip_PININT_ClearIntStatus(LPC_GPIO_PIN_INT, PININTCH0);
@@ -86,9 +118,14 @@ static void configurarInterrupcionRFID(void){
 --------------------------------------------------------------------------- */
 static void leerRFID(void){
     printf("\r\n[RFID] leyendo RFID por SPI...\r\n");
-    const char *codigoRFIDSimulado = "RFID123"; // Simulación
+    const char *codigoRFIDSimulado = "9876543210FF"; // Simulación
     if (validarRFID(codigoRFIDSimulado)){
-        printf("\r\n[ACCESO] RFID válido\r\n");
+        const char *tag = obtenerTagPorRFID(codigoRFIDSimulado);
+        if (tag) {
+            printf("\r\n[ACCESO] RFID válido - Bienvenido, %s\r\n", tag);
+        } else {
+            printf("\r\n[ACCESO] RFID válido\r\n");
+        }
         alertaExito();
         intentosFallidos = 0;
         printf("\r\n [MOTOR] Abriendo cerradura...\r\n");
@@ -134,6 +171,7 @@ void mefInit(void){
    Actualización de la MEF
 --------------------------------------------------------------------------- */
 void mefUpdate(void){
+    //printf("\r . \r\n");
     static uint32_t tiempoInicio = 0;
     static uint32_t ultimaPresencia = 0;
     static EstadoMEF_t estadoPrevio = REPOSO;
@@ -142,9 +180,6 @@ void mefUpdate(void){
 
         case REPOSO:
             if(eventoPresencia || eventoRFID){
-                printf("\r\n[DEBUG] Llamando sincronizarConServidor() antes de despertar flujo\r\n");
-                bool okSync = sincronizarConServidor();
-                printf("\r\n[DEBUG] Resultado sincronización: %s\r\n", okSync?"OK":"FALLÓ");
                 if (eventoRFID){
                     eventoRFID = false;
                     estadoPrevio = REPOSO;
@@ -152,14 +187,19 @@ void mefUpdate(void){
                     break;
                 }
                 printf("\r\n[EVENTO] Presencia detectada\r\n");
+                printf("\r\n[DEBUG] Llamando sincronizarConServidor()\r\n");
+                bool okSync = sincronizarConServidor();
+                printf("\r\n[DEBUG] Resultado sincronización: %s\r\n", okSync?"OK":"FALLÓ");
                 eventoPresencia = false;
                 tecladoReset();
                 tiempoInicio = tickRead();
                 ultimaPresencia = tiempoInicio;
                 printf("\r\n[EVENTO] Ingrese PIN de 5 dígitos o '*' para menú\r\n");
                 estadoActual = LEER_PIN;
+            } else {
+                // Solo dormir si no hay eventos pendientes
+                entrarModoSleep();
             }
-            __WFI(); // bajo consumo?
             break;
 
         case LEER_PIN:
@@ -202,16 +242,17 @@ void mefUpdate(void){
                 break;
             }
             // Si no validó, retomamos el flujo anterior
-            if (estadoPrevio == LEER_PIN) {
-                estadoActual = LEER_PIN;
-            } else {
-                estadoActual = REPOSO;
-            }
+            estadoActual = LEER_PIN;
             break;
          
         case VALIDAR:
             if (validarPin(pinIngresado)){
-                  printf("\r\n[ACCESO] CORRECTO\r\n");
+                  const char *tag = obtenerTagPorPin(pinIngresado);
+                  if (tag) {
+                      printf("\r\n[ACCESO] CORRECTO - Bienvenido, %s\r\n", tag);
+                  } else {
+                      printf("\r\n[ACCESO] CORRECTO\r\n");
+                  }
                   alertaExito();
                   intentosFallidos = 0;
                   printf("\r\n [MOTOR] Abriendo cerradura...\r\n");
