@@ -2,13 +2,14 @@
 #define TECLADO_H_
 
 #include <stdbool.h>
+#include <stdint.h>
 
-/* Inicialización y control del teclado */
+/* InicializaciÃ³n y control del teclado */
 void tecladoInit(void);
 void tecladoReset(void);
 
 /* Lecturas */
-bool tecladoLeerPin(char *pin);
+int tecladoLeerPin(char *pin, uint32_t *ultimaActividad);
 bool tecladoLeerTecla(char *tecla);
 
 #endif /* TECLADO_H_ */
