@@ -151,9 +151,12 @@ void mefInit(void){
     tecladoInit();
     alertasInit();
     espATInit(115200);
-    printf("\r\n[ESP][INIT] Realizando chequeo AT...\r\n");
-    bool espOk = espATCheck(1000);
-    printf("\r\n[ESP][INIT] Resultado chequeo: %s\r\n", espOk?"OK":"FALLÓ");
+    printf("\r\n[ESP][INIT] Inicializando ESP (AT/BLUFI) ...\r\n");
+    bool atOk = inicializarESP(8000);
+    printf("\r\n[ESP][INIT] Resultado AT: %s\r\n", atOk?"OK":"FALLÓ");
+    printf("\r\n[ESP][INIT] Esperando 'WIFI GOT IP'...\r\n");
+    bool ipOk = espWaitWifiGotIP(120000);
+    printf("\r\n[ESP][INIT] Estado WiFi: %s\r\n", ipOk?"GOT IP":"TIMEOUT");
     configurarInterrupcionPRESENCIA();
     configurarInterrupcionRFID();
 

@@ -41,5 +41,7 @@ bool espATCheck(uint32_t timeoutMs);
  * Devuelve cantidad de usuarios parseados exitosamente.
  */
 size_t espHTTPGetPins(const char *url, PinUsuario_t *pinsOut, size_t maxPins, uint32_t timeoutMs);
+bool espWaitWifiGotIP(uint32_t timeoutMs);
+bool inicializarESP(uint32_t timeoutMs);
 
 #endif /* ESPAT_H_ */

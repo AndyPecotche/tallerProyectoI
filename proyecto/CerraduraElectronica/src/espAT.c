@@ -14,27 +14,97 @@ void espATInit(uint32_t baudrate){
     uartConfig(ESP_UART, baudrate);
 }
 
-// Chequeo básico: envía "AT" y espera "OK" en la respuesta.
-bool espATCheck(uint32_t timeoutMs){    
-    //Esperar aca hasta que reciba respuesta
-    for (int i = 0; i < 3; i++) {
-        printf("\r\n[ESP][CHECK] Enviando comando AT, intento %d...\r\n", i+1);
-        char resp[64];
-        size_t n = enviarComandoAT("AT", resp, sizeof(resp), timeoutMs);
-        // Buscar "OK" (puede venir con CR/LF)
-        if(n > 0){
-            if(strstr(resp, "OK") != NULL){
-                printf("\r\n[ESP][CHECK] OK detectado en respuesta\r\n");
-                return true;
-            } else {
-                printf("\r\n[ESP][CHECK] Respuesta sin OK: '%s'\r\n", resp);
+// Captura e imprime todo del ESP hasta ver "WIFI GOT IP" o timeout
+bool espWaitWifiGotIP(uint32_t timeoutMs){
+    uint32_t start = tickRead();
+    char window[64];
+    size_t wpos = 0;
+    uint8_t b;
+    printf("\r\n[ESP][BOOT] Esperando WIFI GOT IP...\r\n");
+    while ((tickRead() - start) < timeoutMs){
+        if (uartReadByte(ESP_UART, &b)){
+            char c = (char)b;
+            // imprimir en vivo
+            if (c >= 32 && c <= 126){
+                printf("%c", c);
+            } else if (c == '\r') {
+                printf("<CR>");
+            } else if (c == '\n') {
+                printf("\r\n");
             }
-        } else {
-            printf("\r\n[ESP][CHECK] Sin bytes recibidos\r\n");
+            // acumular en ventana circular simple
+            if (wpos < sizeof(window)-1){
+                window[wpos++] = c;
+                window[wpos] = '\0';
+            } else {
+                // desplazamiento simple si se llena
+                memmove(window, window+1, sizeof(window)-2);
+                window[sizeof(window)-2] = c;
+                window[sizeof(window)-1] = '\0';
+            }
+            // chequeo de substring
+            if (strstr(window, "WIFI GOT IP") != NULL){
+                printf("\r\n[ESP][BOOT] WIFI GOT IP detectado\r\n");
+                return true;
+            }
         }
-        delay(1000); // Esperar antes del siguiente intento
     }
+    printf("\r\n[ESP][BOOT] Timeout esperando WIFI GOT IP\r\n");
     return false;
+}
+
+// Chequeo básico: envía "AT" y espera "OK" en la respuesta.
+bool espATCheck(uint32_t timeoutMs){
+    // Nuevo comportamiento: solo espera WIFI GOT IP
+    return espWaitWifiGotIP(timeoutMs);
+}
+
+// Inicializa el ESP: AT handshake, set BLUFI name y habilitar BLUFI
+bool inicializarESP(uint32_t timeoutMs){
+    char resp[256];
+    bool ok = false;
+
+    // 1) Enviar "AT" periódicamente hasta recibir "OK"
+    uint32_t start = tickRead();
+    while ((tickRead() - start) < timeoutMs){
+        size_t n = enviarComandoAT("AT", resp, sizeof(resp), 1000);
+        if (n > 0 && strstr(resp, "OK") != NULL){
+            printf("\r\n[ESP][INIT] AT -> OK\r\n");
+            ok = true;
+            break;
+        } else {
+            printf("\r\n[ESP][INIT] AT sin OK, reintentando...\r\n");
+            delay(500);
+        }
+    }
+
+    // ) Enviar una vez AT+RESTORE="cerradura" y mostrar respuesta
+    size_t n1 = enviarComandoAT("AT+RESTORE", resp, sizeof(resp), 2000);
+    if (n1 > 0){
+        printf("\r\n[ESP][INIT] RESTORE respuesta: %s\r\n", resp);
+    } else {
+        printf("\r\n[ESP][INIT] RESTORE sin respuesta\r\n");
+    }
+
+
+    // 2) Enviar una vez AT+BLUFINAME="cerradura" y mostrar respuesta
+    size_t n2 = enviarComandoAT("AT+BLUFINAME=\"cerradura\"", resp, sizeof(resp), 2000);
+    if (n2 > 0){
+        printf("\r\n[ESP][INIT] BLUFINAME respuesta: %s\r\n", resp);
+    } else {
+        printf("\r\n[ESP][INIT] BLUFINAME sin respuesta\r\n");
+    }
+
+    // 3) Enviar AT+BLUFI=1 y mostrar respuesta
+    size_t n3 = enviarComandoAT("AT+BLUFI=1", resp, sizeof(resp), 2000);
+    if (n3 > 0){
+        printf("\r\n[ESP][INIT] BLUFI=1 respuesta: %s\r\n", resp);
+    } else {
+        printf("\r\n[ESP][INIT] BLUFI=1 sin respuesta\r\n");
+    }
+
+    // Devolver si AT->OK se logró (el resto es informativo)
+    return ok;
 }
 
 /* ---------------------------------------------------------------------------
