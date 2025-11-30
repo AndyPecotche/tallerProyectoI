@@ -4,7 +4,7 @@
 #include <stdbool.h>
 
 /* ---------------------------------------------------------------------------
-   CONFIGURACIÓN HARDWARE DEL TECLADO
+   CONFIGURACIï¿½N HARDWARE DEL TECLADO
 --------------------------------------------------------------------------- */
 #define KEYPAD_ROWS 4
 #define KEYPAD_COLS 3
@@ -27,9 +27,12 @@ static keypad_t keypad;
 
 static char pinIngresado[PIN_LENGTH + 1];
 static uint8_t pos = 0;
+// Estado para evitar repeticiÃ³n al mantener apretada una tecla
+static bool keyHeld = false;
+static uint16_t lastIndex = 0xFFFF;
 
 /* ---------------------------------------------------------------------------
-   INICIALIZACIÓN
+   INICIALIZACIï¿½N
 --------------------------------------------------------------------------- */
 void tecladoInit(void) {
     keypadConfig(&keypad, rowPins, KEYPAD_ROWS, colPins, KEYPAD_COLS);
@@ -46,53 +49,91 @@ void tecladoReset(void){
 }
 
 /* ---------------------------------------------------------------------------
-   LEE UN PIN DE 5 DÍGITOS
-   - Retorna true cuando se completan los 5 dígitos.
-   - Copia el PIN completo en el parámetro 'pin'.
+   LEE UN PIN DE 5 Dï¿½GITOS
+   - Retorna 1 cuando se completan los 5 dï¿½gitos.
+   - Retorna -1 si se presiona '*' (cï¿½digo de menï¿½).
+   - Retorna 0 si aï¿½n se estï¿½ ingresando.
+   - Copia el PIN completo en el parï¿½metro 'pin'.
+   - Actualiza ultimaActividad cada vez que se presiona una tecla.
 --------------------------------------------------------------------------- */
-bool tecladoLeerPin(char *pin) {
+int tecladoLeerPin(char *pin, uint32_t *ultimaActividad) {
     uint16_t teclaIndex;
     char teclaChar;
 
     if (keypadRead(&keypad, &teclaIndex)) {
-        uint16_t fila = teclaIndex / KEYPAD_COLS;
-        uint16_t columna = teclaIndex % KEYPAD_COLS;
-        teclaChar = keypadMap[fila][columna];
+        // Edge detection: solo procesar primera detecciÃ³n o cambio de tecla
+        if (!keyHeld || teclaIndex != lastIndex) {
+            keyHeld = true;
+            lastIndex = teclaIndex;
 
-        if (pos < PIN_LENGTH) {
-            pinIngresado[pos++] = teclaChar;
-            printf("*");
-            fflush(stdout);
-        }
+            uint16_t fila = teclaIndex / KEYPAD_COLS;
+            uint16_t columna = teclaIndex % KEYPAD_COLS;
+            teclaChar = keypadMap[fila][columna];
 
-        if (pos == PIN_LENGTH) {
-            pinIngresado[PIN_LENGTH] = '\0';
-            strcpy(pin, pinIngresado);
-            tecladoReset();
-            printf("\r\n[TECLADO] PIN completo: %s\r\n", pin);
-            return true;
+            // Actualizar timestamp de actividad
+            if (ultimaActividad != NULL) {
+                *ultimaActividad = tickRead();
+                printf("\r\n[DEBUG] Timeout reiniciado por tecla: %c\r\n", teclaChar);
+            }
+
+            // Detectar tecla '*' para menÃº
+            if (teclaChar == '*') {
+                tecladoReset();
+                printf("\r\n[TECLADO] Acceso a menÃº admin\r\n");
+                return -1;
+            }
+
+            // Acumular dÃ­gito
+            if (pos < PIN_LENGTH) {
+                pinIngresado[pos++] = teclaChar;
+                printf("*");
+                fflush(stdout);
+            }
+
+            // PIN completo
+            if (pos == PIN_LENGTH) {
+                pinIngresado[PIN_LENGTH] = '\0';
+                strcpy(pin, pinIngresado);
+                tecladoReset();
+                printf("\r\n[TECLADO] PIN completo: %s\r\n", pin);
+                return 1;
+            }
         }
+    } else {
+        // LiberaciÃ³n de tecla: listo para prÃ³xima detecciÃ³n
+        keyHeld = false;
+        lastIndex = 0xFFFF;
     }
 
-    delay(40); // antirrebote
-    return false;
+    delay(20); // antirrebote ligero; edge evita repetidos
+    return 0;
 }
 
 /* ---------------------------------------------------------------------------
-   LEE UNA SOLA TECLA (para menús u opciones)
-   - Devuelve true si se presionó una tecla válida.
-   - La tecla leída se guarda en el parámetro 'tecla'.
+   LEE UNA SOLA TECLA (para menï¿½s u opciones)
+   - Devuelve true si se presionï¿½ una tecla vï¿½lida.
+   - La tecla leï¿½da se guarda en el parï¿½metro 'tecla'.
 --------------------------------------------------------------------------- */
 bool tecladoLeerTecla(char *tecla) {
     uint16_t teclaIndex;
 
     if (keypadRead(&keypad, &teclaIndex)) {
-        uint16_t fila = teclaIndex / KEYPAD_COLS;
-        uint16_t columna = teclaIndex % KEYPAD_COLS;
-        *tecla = keypadMap[fila][columna];
-        printf("\r\n[TECLADO] Tecla presionada: %c\r\n", *tecla);
-        delay(80);  // Anti-rebote
-        return true;
+        // Edge detection: reportar solo primera detecciÃ³n o cambio
+        if (!keyHeld || teclaIndex != lastIndex) {
+            keyHeld = true;
+            lastIndex = teclaIndex;
+
+            uint16_t fila = teclaIndex / KEYPAD_COLS;
+            uint16_t columna = teclaIndex % KEYPAD_COLS;
+            *tecla = keypadMap[fila][columna];
+            printf("\r\n[TECLADO] Tecla presionada: %c\r\n", *tecla);
+            delay(20);
+            return true;
+        }
+    } else {
+        // LiberaciÃ³n
+        keyHeld = false;
+        lastIndex = 0xFFFF;
     }
 
     return false;
