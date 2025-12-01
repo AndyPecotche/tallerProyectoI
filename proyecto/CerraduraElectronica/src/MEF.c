@@ -102,8 +102,8 @@ static void configurarInterrupcionPRESENCIA(void){
         Chip_SCU_GPIOIntPinSel(0, 0, 4); // TEC1 -> GPIO0[4]
     } else {
         // Configurar pin P1_17 como GPIO0[12] para entrada de interrupcion por presencia
-        // Usar pull-up para estabilizar nivel alto (idle) y evitar flotación
-        Chip_SCU_PinMux(1, 17, SCU_MODE_PULLUP | SCU_MODE_INBUFF_EN | SCU_MODE_ZIF_DIS, FUNC0);
+        // Usar pull-down: línea en bajo en reposo, activa en alto
+        Chip_SCU_PinMux(1, 17, SCU_MODE_PULLDOWN | SCU_MODE_INBUFF_EN | SCU_MODE_ZIF_DIS, FUNC0);
         Chip_GPIO_SetPinDIRInput(LPC_GPIO_PORT, 0, 12);
         Chip_SCU_GPIOIntPinSel(0, 0, 12); // PRESENCIA -> GPIO0[12] (MDIO en P1_17 como GPIO)
     }
