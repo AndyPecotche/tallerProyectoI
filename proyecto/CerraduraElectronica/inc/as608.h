@@ -29,4 +29,36 @@ bool as608Enroll(char idOut[5]);
  */
 void as608SetDebug(uint8_t level);
 
+/* ---------------------------------------------------------------
+ * Mini MEF (estado interno) para escaneo no bloqueante del AS608
+ * ---------------------------------------------------------------
+ * El objetivo es dividir la operación GetImage -> Image2Tz -> Search
+ * en pasos breves que se avanzan en cada llamada, evitando bloqueos
+ * largos y permitiendo que el keypad y la MEF principal sigan fluidos.
+ */
+
+typedef enum {
+	AS608_SCAN_IDLE = 0,
+	AS608_SCAN_INPROGRESS,
+	AS608_SCAN_MATCH,
+	AS608_SCAN_NOMATCH,
+	AS608_SCAN_ERROR
+} as608ScanStatus_t;
+
+/* Reinicia el estado interno del escaneo (queda listo para comenzar). */
+void as608ScanReset(void);
+
+/* Avanza la mini MEF en pasos cortos (2-5ms por llamada).
+ * Retorna el estado actual del proceso:
+ * - AS608_SCAN_INPROGRESS: continuar llamando en el próximo ciclo
+ * - AS608_SCAN_MATCH: se encontró coincidencia, idOut/scoreOut válidos
+ * - AS608_SCAN_NOMATCH: sin coincidencia o sin dedo
+ * - AS608_SCAN_ERROR: error de comunicación o protocolo
+ * - AS608_SCAN_IDLE: aún no comenzó; se inicia automáticamente en la primera llamada
+ */
+as608ScanStatus_t as608ScanStep(uint16_t *idOut, uint16_t *scoreOut);
+
+/* Obtiene la cantidad de templates almacenados (para diagnóstico). */
+int as608GetTemplateCount(void);
+
 #endif /* AS608_H_ */

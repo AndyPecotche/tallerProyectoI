@@ -152,7 +152,8 @@ void mefInit(void){
     configurarInterrupcionPRESENCIA();
     configurarInterrupcionRFID();
     as608Init(0);
-    as608SetDebug(0);// Activar nivel de debug para fingerprint (1 = básico, 2 = detallado)
+    as608SetDebug(1);// Nivel de debug fingerprint (1=básico, 2=detallado)
+    as608ScanReset(); // Preparar mini MEF del AS608
     sincronizarConServidor();
     // Configurar GPIO0[1] como entrada para el sensor de cierre
     // Pin físico P0_1 mapeado a GPIO0[1] como entrada con buffer habilitado
@@ -209,18 +210,27 @@ void mefUpdate(void){
                 estadoActual = LEER_RFID;
                 break;
             }
-            // Poll huella con intervalo para no saturar UART
+            // Mini MEF del AS608: pasos breves en cada ciclo
             {
-                static uint32_t ultimoIntentoHuella = 0;
-                const uint32_t INTERVALO_HUELLA_MS = 600; 
-                if (tickRead() - ultimoIntentoHuella >= INTERVALO_HUELLA_MS){
-                    ultimoIntentoHuella = tickRead();
+                static uint32_t agendaHuella = 0;
+                static bool escaneoActivo = false;
+                const uint32_t INTERVALO_HUELLA_MS = 600; // agenda de intentos
+
+                // Programar inicio de escaneo cada cierto intervalo
+                if (!escaneoActivo && (tickRead() - agendaHuella) >= INTERVALO_HUELLA_MS){
+                    as608ScanReset();
+                    escaneoActivo = true;
+                    agendaHuella = tickRead();
+                }
+
+                if (escaneoActivo){
                     uint16_t id=0, score=0;
-                    if (as608PollHuella(&id, &score)){
+                    as608ScanStatus_t st = as608ScanStep(&id, &score);
+                    if (st == AS608_SCAN_MATCH){
+                        printf("\r\n[DEBUG MEF] as608ScanStep retornó MATCH: id=%u score=%u\r\n", (unsigned)id, (unsigned)score);
                         char idStr[5];
                         snprintf(idStr, sizeof(idStr), "%04u", (unsigned)id);
                         printf("\r\n[HUELLA] Dedo detectado (ID bruto=%s score=%u)\r\n", idStr, (unsigned)score);
-                        // Centraliza mensaje de bienvenida en validacion
                         if (validarHuella(idStr)){
                             alertaExito();
                             intentosFallidos = 0;
@@ -230,10 +240,16 @@ void mefUpdate(void){
                                 printf("\r\n[OMITIR MOTOR] Simulando apertura de cerradura\r\n");
                             }
                             estadoActual = SENSOR_CIERRE;
+                            escaneoActivo = false;
                             break;
                         } else {
                             printf("\r\n[ACCESO] Huella no registrada (ID=%s)\r\n", idStr);
+                            escaneoActivo = false;
                         }
+                    } else if (st == AS608_SCAN_NOMATCH || st == AS608_SCAN_ERROR){
+                        escaneoActivo = false; // liberar hasta el próximo intento programado
+                    } else {
+                        // INPROGRESS/IDLE: seguir avanzando en próximos ciclos
                     }
                 }
             }

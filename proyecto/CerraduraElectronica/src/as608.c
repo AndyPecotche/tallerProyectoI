@@ -43,11 +43,11 @@
 #define AS608_REGMODEL_TIMEOUT_MS      300
 #define AS608_STORE_TIMEOUT_MS         500
 #define AS608_ENROLL_STEP_DELAY_MS     100
-#define AS608_ENROLL_NOFINGER_DELAY_MS 120
-#define AS608_ENROLL_ERROR_DELAY_MS    150
+#define AS608_ENROLL_NOFINGER_DELAY_MS 200
+#define AS608_ENROLL_ERROR_DELAY_MS    300
 
 /* Intervalo mínimo entre intentos de captura durante ENROLL (ms) */
-#define AS608_ENROLL_ATTEMPT_INTERVAL_MS 2000
+#define AS608_ENROLL_ATTEMPT_INTERVAL_MS 300
 
 /* Nivel de debug runtime (configurable) desde llamado a funcion*/
 static uint8_t g_as608DebugLevel;
@@ -282,7 +282,9 @@ static bool as608EnrollCapture(uint8_t slot, int pasoIndex){
     uint32_t lastAttempt = 0;
     int errorCount = 0;
     int tries = 0;
-    while (((tickRead() - start) < 10000) || (tries < 5)){
+    const uint32_t TIMEOUT_MS = 30000; // 30 segundos timeout
+    
+    while ((tickRead() - start) < TIMEOUT_MS){
         if((tickRead() - lastAttempt) < AS608_ENROLL_ATTEMPT_INTERVAL_MS){
             delay(10);
             continue;
@@ -290,8 +292,9 @@ static bool as608EnrollCapture(uint8_t slot, int pasoIndex){
         lastAttempt = tickRead();
         uint8_t r = as608CmdGetImageLong();
         tries++;
+        
         if(r == 0x00){
-            printf("[AS608][ENROLL] Imagen %d capturada\r\n", pasoIndex);
+            printf("[AS608][ENROLL] Imagen %d capturada (intento %d)\r\n", pasoIndex, tries);
             delay(AS608_ENROLL_STEP_DELAY_MS);
             uint8_t tz = as608CmdImage2Tz(slot);
             if(tz != 0x00){
@@ -301,19 +304,20 @@ static bool as608EnrollCapture(uint8_t slot, int pasoIndex){
             return true;
         } else if (r == 0x02){
             // Sin dedo, esperar un poco más para no saturar
+            if(tries % 10 == 0){
+                printf("[AS608][ENROLL] Esperando dedo (imagen %d)...\r\n", pasoIndex);
+            }
             delay(AS608_ENROLL_NOFINGER_DELAY_MS);
         } else {
             errorCount++;
-            if(errorCount % 5 == 0){
-                printf("[AS608][ENROLL] GetImage errores acumulados=%d (último=0x%02X)\r\n", errorCount, r);
+            if(errorCount % 10 == 0){
+                printf("[AS608][ENROLL] GetImage errores=%d (último=0x%02X)\r\n", errorCount, r);
             }
             delay(AS608_ENROLL_ERROR_DELAY_MS);
         }
     }
-    if(((tickRead() - start) >= 10000) && tries < 1){
-        printf("[AS608][ENROLL] Timeout esperando dedo (imagen %d)\r\n", pasoIndex);
-        return false;
-    }
+    
+    printf("[AS608][ENROLL] Timeout esperando dedo (imagen %d) después de %d intentos\r\n", pasoIndex, tries);
     return false;
 }
 
@@ -322,14 +326,14 @@ bool as608Enroll(char idOut[5]){
     memset(idOut,0,5);
     printf("\r\n[AS608][ENROLL] Inicio de registro de huella\r\n");
     printf("[AS608][ENROLL] Paso 1: Coloque dedo (imágen 1)\r\n");
-    // Espera adicional solicitada antes de iniciar escaneo
-    delay(5000);
+    // Espera breve para que el usuario lea el mensaje
+    delay(2000);
     if(!as608EnrollCapture(0x01, 1)) return false;
 
     printf("[AS608][ENROLL] Retire dedo...\r\n");
-    delay(1500);
+    delay(2000);
     printf("[AS608][ENROLL] Paso 2: Coloque nuevamente el mismo dedo (imágen 2)\r\n");
-    delay(5000); // Espera adicional antes de segundo escaneo
+    delay(2000); // Espera breve antes de segundo escaneo
     if(!as608EnrollCapture(0x02, 2)) return false;
 
     uint8_t rm = as608CmdRegModel();
@@ -370,4 +374,232 @@ void as608Init(uint32_t baudrate){
     as608FlushRx(10);
     bool as608Ok = as608Check();
     printf("\r\n[AS608][INIT] Estado sensor: %s\r\n", as608Ok?"OK":"FALLÓ");
+    int tc = -1;
+    tc = as608CmdTemplateCount();
+    if (tc >= 0){
+        printf("[AS608][INIT] Templates almacenados: %d\r\n", tc);
+    }
+}
+
+/* ---------------------------------------------------------------
+ * Mini MEF de escaneo no bloqueante
+ * --------------------------------------------------------------- */
+typedef enum {
+    ST_IDLE = 0,
+    ST_SEND_GETIMAGE,
+    ST_WAIT_GETIMAGE,
+    ST_PREDLY_IMAGE2TZ,
+    ST_SEND_IMAGE2TZ,
+    ST_WAIT_IMAGE2TZ,
+    ST_SEND_SEARCH,
+    ST_WAIT_SEARCH,
+    ST_DONE_MATCH,
+    ST_DONE_NOMATCH,
+    ST_DONE_ERROR
+} as608ScanState_t;
+
+static struct {
+    as608ScanState_t st;
+    uint32_t tCmdStart;
+    uint32_t tLastByte;
+    uint8_t resp[64];
+    size_t respLen;
+    uint16_t lastId;
+    uint16_t lastScore;
+} g_scan;
+
+void as608ScanReset(void){
+    memset(&g_scan, 0, sizeof(g_scan));
+    g_scan.st = ST_SEND_GETIMAGE; // listo para comenzar en la primera llamada
+}
+
+/* Lee algunos bytes por un pequeño slice de tiempo (2-4ms) */
+static void as608ReadSlice(uint8_t *buf, size_t *len, size_t maxLen, uint32_t sliceMs){
+    uint32_t start = tickRead();
+    uint8_t b;
+    while ((tickRead() - start) < sliceMs){
+        if (uartReadByte(AS608_UART, &b)){
+            if (*len < maxLen){
+                buf[(*len)++] = b;
+                g_scan.tLastByte = tickRead();
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+/* Intenta extraer el confirm code del ACK acumulado; retorna 0xFF si aún incompleto/incorrecto */
+static uint8_t as608TryParseAck(const uint8_t *buf, size_t len){
+    if (len < 12) return 0xFF;
+    if (buf[0] != 0xEF || buf[1] != 0x01) return 0xFF;
+    if (buf[6] != 0x07) return 0xFF;
+    return buf[9];
+}
+
+/* Tamaño total esperado del frame a partir del header (incluye checksum). 0 si aún no se puede calcular. */
+static uint16_t as608ExpectedFrameLen(const uint8_t *buf, size_t len){
+    if (len < 9) return 0;
+    if (buf[0] != 0xEF || buf[1] != 0x01) return 0;
+    uint16_t l = ((uint16_t)buf[7] << 8) | buf[8];
+    // total = 9 bytes de header + l (payload + checksum)
+    return 9 + l;
+}
+
+static void as608DbgDump(const char *tag, const uint8_t *buf, size_t len){
+    if (g_as608DebugLevel < 2) return;
+    printf("[AS608][DBG2] %s (%u bytes): ", tag, (unsigned)len);
+    size_t n = len > 32 ? 32 : len;
+    for(size_t i=0;i<n;i++) printf("%02X ", buf[i]);
+    if (len > n) printf("...");
+    printf("\r\n");
+}
+
+/* Avanza la mini MEF en pasos cortos */
+as608ScanStatus_t as608ScanStep(uint16_t *idOut, uint16_t *scoreOut){
+    // Duración máxima por paso de espera de respuesta (no bloqueante)
+    const uint32_t SLICE_MS = 4;
+
+    switch(g_scan.st){
+        case ST_IDLE:
+            // Si está idle, preparar nuevo intento
+            g_scan.st = ST_SEND_GETIMAGE;
+            // continuar flujo
+        case ST_SEND_GETIMAGE: {
+            g_scan.respLen = 0;
+            as608FlushRx(AS608_FLUSH_MS_SHORT);
+            // Enviar comando GetImage
+            uint8_t payload = 0x01;
+            as608WritePacket(0x01, &payload, 1);
+            g_scan.tCmdStart = tickRead();
+            if (g_as608DebugLevel >= 2) printf("[AS608][DBG2] -> GetImage\r\n");
+            g_scan.st = ST_WAIT_GETIMAGE;
+            return AS608_SCAN_INPROGRESS;
+        }
+        case ST_WAIT_GETIMAGE: {
+            as608ReadSlice(g_scan.resp, &g_scan.respLen, sizeof(g_scan.resp), SLICE_MS);
+            uint8_t code = as608TryParseAck(g_scan.resp, g_scan.respLen);
+            if (code != 0xFF){
+                if (g_as608DebugLevel >= 2){
+                    printf("[AS608][DBG2] GetImage ACK=0x%02X len=%u exp=%u\r\n", code, (unsigned)g_scan.respLen, (unsigned)as608ExpectedFrameLen(g_scan.resp, g_scan.respLen));
+                    as608DbgDump("GetImage RX", g_scan.resp, g_scan.respLen);
+                }
+                if (code == 0x00){
+                    g_scan.st = ST_PREDLY_IMAGE2TZ;
+                    g_scan.tCmdStart = tickRead();
+                    return AS608_SCAN_INPROGRESS;
+                } else if (code == 0x02){
+                    g_scan.st = ST_DONE_NOMATCH; // sin dedo
+                } else {
+                    g_scan.st = ST_DONE_ERROR;
+                }
+            } else {
+                // timeout razonable para GetImage
+                if ((tickRead() - g_scan.tCmdStart) > AS608_GETIMAGE_LONG_TIMEOUT_MS){
+                    g_scan.st = ST_DONE_NOMATCH; // tratar como sin dedo para no ser invasivo
+                }
+            }
+            break;
+        }
+        case ST_PREDLY_IMAGE2TZ: {
+            // Espera mínima sin bloquear
+            if ((tickRead() - g_scan.tCmdStart) >= AS608_IMAGE2TZ_PRE_DELAY_MS){
+                g_scan.st = ST_SEND_IMAGE2TZ;
+            }
+            return AS608_SCAN_INPROGRESS;
+        }
+        case ST_SEND_IMAGE2TZ: {
+            g_scan.respLen = 0;
+            as608FlushRx(AS608_FLUSH_MS_SHORT);
+            uint8_t extra = 0x01; // usar CharBuffer1
+            uint8_t payload[2] = { 0x02, extra };
+            as608WritePacket(0x01, payload, 2);
+            g_scan.tCmdStart = tickRead();
+            if (g_as608DebugLevel >= 2) printf("[AS608][DBG2] -> Image2Tz(0x%02X)\r\n", extra);
+            g_scan.st = ST_WAIT_IMAGE2TZ;
+            return AS608_SCAN_INPROGRESS;
+        }
+        case ST_WAIT_IMAGE2TZ: {
+            as608ReadSlice(g_scan.resp, &g_scan.respLen, sizeof(g_scan.resp), SLICE_MS);
+            uint8_t code = as608TryParseAck(g_scan.resp, g_scan.respLen);
+            if (code != 0xFF){
+                if (g_as608DebugLevel >= 2){
+                    printf("[AS608][DBG2] Image2Tz ACK=0x%02X len=%u exp=%u\r\n", code, (unsigned)g_scan.respLen, (unsigned)as608ExpectedFrameLen(g_scan.resp, g_scan.respLen));
+                    as608DbgDump("Image2Tz RX", g_scan.resp, g_scan.respLen);
+                }
+                if (code == 0x00){
+                    g_scan.st = ST_SEND_SEARCH;
+                    return AS608_SCAN_INPROGRESS;
+                } else {
+                    g_scan.st = ST_DONE_ERROR;
+                }
+            } else {
+                if ((tickRead() - g_scan.tCmdStart) > AS608_IMAGE2TZ_TIMEOUT_MS){
+                    g_scan.st = ST_DONE_ERROR;
+                }
+            }
+            break;
+        }
+        case ST_SEND_SEARCH: {
+            g_scan.respLen = 0;
+            as608FlushRx(AS608_FLUSH_MS_TINY);
+            uint16_t startPage = 0x0000, pageCount = 0x00A3;
+            uint8_t payload[] = { 0x1B, 0x01, (uint8_t)(startPage>>8), (uint8_t)(startPage&0xFF), (uint8_t)(pageCount>>8), (uint8_t)(pageCount&0xFF) };
+            as608WritePacket(0x01, payload, sizeof(payload));
+            g_scan.tCmdStart = tickRead();
+            if (g_as608DebugLevel >= 2) printf("[AS608][DBG2] -> HiSpeedSearch(start=0x%04X,count=0x%04X)\r\n", startPage, pageCount);
+            g_scan.st = ST_WAIT_SEARCH;
+            return AS608_SCAN_INPROGRESS;
+        }
+        case ST_WAIT_SEARCH: {
+            as608ReadSlice(g_scan.resp, &g_scan.respLen, sizeof(g_scan.resp), SLICE_MS);
+            uint8_t code = as608TryParseAck(g_scan.resp, g_scan.respLen);
+            if (code != 0xFF){
+                uint16_t expect = as608ExpectedFrameLen(g_scan.resp, g_scan.respLen);
+                if (g_as608DebugLevel >= 2){
+                    printf("[AS608][DBG2] Search ACK=0x%02X len=%u exp=%u\r\n", code, (unsigned)g_scan.respLen, (unsigned)expect);
+                    as608DbgDump("Search RX", g_scan.resp, g_scan.respLen);
+                }
+                if (code == 0x00){
+                    if (expect != 0 && g_scan.respLen >= expect && g_scan.respLen >= 14){
+                        g_scan.lastId = ((uint16_t)g_scan.resp[10]<<8) | g_scan.resp[11];
+                        g_scan.lastScore = ((uint16_t)g_scan.resp[12]<<8) | g_scan.resp[13];
+                        if (idOut) *idOut = g_scan.lastId;
+                        if (scoreOut) *scoreOut = g_scan.lastScore;
+                        if (g_as608DebugLevel >= 2){
+                            printf("[AS608][DBG2] Match ID=%u Score=%u\r\n", (unsigned)g_scan.lastId, (unsigned)g_scan.lastScore);
+                        }
+                        g_scan.st = ST_DONE_MATCH;
+                    } else {
+                        // esperar a completar el frame según header
+                        return AS608_SCAN_INPROGRESS;
+                    }
+                } else {
+                    g_scan.st = ST_DONE_NOMATCH;
+                }
+            } else {
+                if ((tickRead() - g_scan.tCmdStart) > AS608_SEARCH_TIMEOUT_MS){
+                    g_scan.st = ST_DONE_NOMATCH;
+                }
+            }
+            break;
+        }
+        case ST_DONE_MATCH:
+            // Escribir resultados almacenados antes de retornar
+            if (idOut) *idOut = g_scan.lastId;
+            if (scoreOut) *scoreOut = g_scan.lastScore;
+            g_scan.st = ST_IDLE; // listo para próximo intento
+            return AS608_SCAN_MATCH;
+        case ST_DONE_NOMATCH:
+            g_scan.st = ST_IDLE;
+            return AS608_SCAN_NOMATCH;
+        case ST_DONE_ERROR:
+            g_scan.st = ST_IDLE;
+            return AS608_SCAN_ERROR;
+    }
+    return AS608_SCAN_INPROGRESS;
+}
+
+int as608GetTemplateCount(void){
+    return as608CmdTemplateCount();
 }

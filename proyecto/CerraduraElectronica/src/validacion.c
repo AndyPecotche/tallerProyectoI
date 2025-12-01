@@ -168,7 +168,7 @@ bool sincronizarConServidor(void) {
     PinUsuario_t pinsServidor[MAX_PINS];
     memset(pinsServidor, 0, sizeof(pinsServidor));
     
-    size_t count = espHTTPGetPins("http://192.168.0.190:3000/syncPins/?allPins=true", 
+    size_t count = espHTTPGetPins("http://192.168.101.87:3000/syncPins/?allPins=true", 
                                    pinsServidor, MAX_PINS, 8000);
     
     if(count == 0){

@@ -77,18 +77,36 @@ bool inicializarESP(uint32_t timeoutMs){
 
 // Resetea las credenciales WiFi del ESP (llamar solo cuando usuario lo solicite)
 bool resetearCredencialesESP(void){
-    char resp[256];
+    char resp[512];
     
     printf("\r\n[ESP][RESET] Borrando credenciales WiFi...\r\n");
     
     // AT+RESTORE borra todas las configuraciones (incluyendo WiFi)
     size_t n = enviarComandoAT("AT+RESTORE", resp, sizeof(resp), 5000);
     if (n > 0){
-        printf("\r\n[ESP][RESET] RESTORE respuesta: %s\r\n", resp);
-        if(strstr(resp, "OK")){
+        printf("\r\n[ESP][RESET] RESTORE respuesta (%u bytes)\r\n", (unsigned)n);
+        
+        // Buscar "OK" seguido de CRLF (más robusto que solo OK)
+        // La respuesta típica es: ...AT+RESTORE\r\n\r\nOK\r\n\r\nready\r\n
+        bool foundOK = false;
+        for(size_t i = 0; i < n - 3; i++){
+            if(resp[i] == 'O' && resp[i+1] == 'K' && 
+               (resp[i+2] == '\r' || resp[i+2] == '\n')){
+                foundOK = true;
+                break;
+            }
+        }
+        
+        if(foundOK){
             printf("\r\n[ESP][RESET] Credenciales borradas exitosamente\r\n");
             printf("\r\n[ESP][RESET] El ESP se reiniciará...\r\n");
-            delay(2000); // Esperar a que el ESP se reinicie
+            delay(3000); // Esperar a que el ESP se reinicie completamente
+            
+            // Re-inicializar comunicación AT
+            printf("\r\n[ESP][RESET] Reinicializando comunicación...\r\n");
+            delay(1000);
+            inicializarESP(8000);
+            
             return true;
         }
     }
