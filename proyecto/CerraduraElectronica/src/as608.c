@@ -55,8 +55,6 @@
 static uint8_t g_as608DebugLevel;
 void as608SetDebug(uint8_t level){ g_as608DebugLevel = level; }
 
-/* Estadísticas de respuesta eliminadas para simplificar el módulo */
-
 static bool as608Send(const uint8_t *data, size_t len){
     for(size_t i=0; i<len; i++){
         uartWriteByte(AS608_UART, data[i]);
