@@ -16,7 +16,7 @@ static EstadoMEF_t estadoActual;
 static char pinIngresado[6];
 static int intentosFallidos = 0;
 
-#define TIMEOUT_MS     60000  // 30 segundos para ingresar PIN
+#define TIMEOUT_MS     10000  // N segundos para ingresar PIN
 
 #define OMITIR_SENSOR_CIERRE 1 // 1 = omitir chequeo de sensor de cierre (para pruebas)
 #define OMITIR_MOTOR 1         // 1 = omitir control de motor (para pruebas)
@@ -230,7 +230,7 @@ void mefUpdate(void){
             // Poll huella con intervalo para no saturar UART
             {
                 static uint32_t ultimoIntentoHuella = 0;
-                const uint32_t INTERVALO_HUELLA_MS = 1000; // escaneo huella cada 1000ms para menor carga UART
+                const uint32_t INTERVALO_HUELLA_MS = 20; // escaneo huella cada 1000ms para menor carga UART
                 if (tickRead() - ultimoIntentoHuella >= INTERVALO_HUELLA_MS){
                     ultimoIntentoHuella = tickRead();
                     uint16_t id=0, score=0;

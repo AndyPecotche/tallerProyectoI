@@ -12,7 +12,7 @@ typedef struct {
     char codigo[PIN_LENGTH + 1];
     bool activo;
     char rfid[20];
-    char huella[4];
+    char huella[5];  // 4 dígitos + null terminator
     char tag[20];
 } PinUsuario_t;
 

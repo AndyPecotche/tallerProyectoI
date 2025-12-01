@@ -3,10 +3,6 @@
 #include <string.h>
 #include <stdio.h>
 
-#ifndef AS608_DEBUG
-#define AS608_DEBUG 0
-#endif
-
 /* Selección del UART para el AS608.
  * En la placa ciaa_nxp (LPC4337) los UART expuestos por sAPI son:
  *   UART_485 (valor 1)  -> Transceiver RS485 (periférico UART0)
@@ -16,19 +12,58 @@
  * si el transceiver RS485 está disponible o re-mapear manualmente pines fuera de sAPI.
  */
 #ifndef AS608_UART
-    /* Por defecto usar el mismo puerto que ESP-AT (RS232 DB9, sAPI=5)
-       Esto facilita probar el sensor conectándolo donde estaba el ESP32. */
-    #define AS608_UART ((uartMap_t)5)
+    /* Por defecto usar UART0 via GPIO1(TX)/GPIO2(RX) en header P0.
+       UART_GPIO = 0 (sAPI index) mapea a LPC_USART0 con pines SCU 6_4/6_5 (FUNC2)
+       Este valor corresponde a UART_GPIO en edu_ciaa_nxp */
+    #define AS608_UART ((uartMap_t)0)
 #endif
 
 /* Baudrate por defecto del AS608 */
 #define AS608_DEFAULT_BAUD 57600
 
+/* Parametrización de tiempos y delays (ms)
+ * Breve descripción de cada constante:
+ * - AS608_FLUSH_MS_SHORT: tiempo para vaciar/descartar bytes pendientes en RX antes de enviar.
+ * - AS608_FLUSH_MS_TINY: versión más corta del flush para comandos rápidos.
+ * - AS608_DELAY_BEFORE_SEND_MS: pequeña espera antes de transmitir un paquete (estabiliza UART/sensor).
+ * - AS608_GETIMAGE_TIMEOUT_MS: tiempo máximo esperando el ACK del comando GetImage.
+ * - AS608_GETIMAGE_LONG_TIMEOUT_MS: variante de timeout más holgada para capturas durante ENROLL/polling.
+ * - AS608_IMAGE2TZ_PRE_DELAY_MS: espera previa a convertir imagen a características (Image2Tz).
+ * - AS608_IMAGE2TZ_TIMEOUT_MS: tiempo máximo esperando el ACK de Image2Tz.
+ * - AS608_SEARCH_TIMEOUT_MS: tiempo máximo esperando respuesta de HiSpeedSearch.
+ * - AS608_PROBE_TIMEOUT_MS: tiempo de espera al sondear baudios con VfyPwd.
+ * - AS608_CHECK_DELAY_MS: pequeña espera tras VfyPwd antes de leer respuesta en as608Check.
+ * - AS608_CHECK_TIMEOUT_MS: tiempo máximo esperando el ACK de VfyPwd en as608Check.
+ * - AS608_TEMPLATECOUNT_TIMEOUT_MS: tiempo máximo esperando respuesta de TemplateCount.
+ * - AS608_REGMODEL_TIMEOUT_MS: tiempo máximo esperando respuesta de RegModel.
+ * - AS608_STORE_TIMEOUT_MS: tiempo máximo esperando respuesta de Store.
+ * - AS608_ENROLL_STEP_DELAY_MS: pausa entre captura y conversión durante ENROLL/poll.
+ * - AS608_ENROLL_NOFINGER_DELAY_MS: pausa cuando no hay dedo detectado, para evitar saturar.
+ * - AS608_ENROLL_ERROR_DELAY_MS: pausa ante errores de captura para dar estabilidad.
+ */
+#define AS608_FLUSH_MS_SHORT           5
+#define AS608_FLUSH_MS_TINY            2
+#define AS608_DELAY_BEFORE_SEND_MS     5
+#define AS608_GETIMAGE_TIMEOUT_MS      250
+#define AS608_GETIMAGE_LONG_TIMEOUT_MS 300
+#define AS608_IMAGE2TZ_PRE_DELAY_MS    80
+#define AS608_IMAGE2TZ_TIMEOUT_MS      600
+#define AS608_SEARCH_TIMEOUT_MS        250
+#define AS608_PROBE_TIMEOUT_MS         3000
+#define AS608_CHECK_DELAY_MS           5
+#define AS608_CHECK_TIMEOUT_MS         3000
+#define AS608_TEMPLATECOUNT_TIMEOUT_MS 3000
+#define AS608_REGMODEL_TIMEOUT_MS      300
+#define AS608_STORE_TIMEOUT_MS         500
+#define AS608_ENROLL_STEP_DELAY_MS     100
+#define AS608_ENROLL_NOFINGER_DELAY_MS 120
+#define AS608_ENROLL_ERROR_DELAY_MS    150
+
 /* Intervalo mínimo entre intentos de captura durante ENROLL (ms) */
 #define AS608_ENROLL_ATTEMPT_INTERVAL_MS 2000
 
 /* Nivel de debug runtime (configurable) */
-static uint8_t g_as608DebugLevel = 2;
+static uint8_t g_as608DebugLevel;
 void as608SetDebug(uint8_t level){ g_as608DebugLevel = level; }
 
 /* Estadísticas de resultados del polling */
@@ -150,33 +185,33 @@ static uint8_t as608GetAck(uint8_t *respBuf, size_t respMax, uint32_t timeoutMs)
 /* Comandos básicos */
 static uint8_t as608CmdGetImage(void){
     uint8_t payload[] = { 0x01 }; // GetImage
-    as608FlushRx(5);
-    delay(5);
+    as608FlushRx(AS608_FLUSH_MS_SHORT);
+    delay(AS608_DELAY_BEFORE_SEND_MS);
     as608WritePacket(0x01, payload, sizeof(payload));
     uint8_t resp[32];
     // Fast empty scan: usar timeout corto (60 ms). Respuestas típicas ~10-20 ms.
     // Conservador: mayor timeout para asegurar captura del ACK
-    return as608GetAck(resp, sizeof(resp), 250);
+    return as608GetAck(resp, sizeof(resp), AS608_GETIMAGE_TIMEOUT_MS);
 }
 
 /* Variante con mayor timeout usada en ENROLL para dar tiempo al sensor */
 static uint8_t as608CmdGetImageLong(void){
     uint8_t payload[] = { 0x01 };
-    as608FlushRx(5);
-    delay(5);
+    as608FlushRx(AS608_FLUSH_MS_SHORT);
+    delay(AS608_DELAY_BEFORE_SEND_MS);
     as608WritePacket(0x01, payload, sizeof(payload));
     uint8_t resp[32];
-    return as608GetAck(resp, sizeof(resp), 300); // más holgado
+    return as608GetAck(resp, sizeof(resp), AS608_GETIMAGE_LONG_TIMEOUT_MS); // más holgado
 }
 
 static uint8_t as608CmdImage2Tz(uint8_t slot /*1 o 2*/){
     uint8_t payload[] = { 0x02, slot };
     // Dar tiempo a que el sensor procese la imagen antes de convertir
-    delay(80);
-    as608FlushRx(5);
+    delay(AS608_IMAGE2TZ_PRE_DELAY_MS);
+    as608FlushRx(AS608_FLUSH_MS_SHORT);
     as608WritePacket(0x01, payload, sizeof(payload));
     uint8_t resp[32];
-    return as608GetAck(resp, sizeof(resp), 600);
+    return as608GetAck(resp, sizeof(resp), AS608_IMAGE2TZ_TIMEOUT_MS);
 }
 
 /* HiSpeedSearch: busca desde startPage por pageCount, devuelve id & score via punteros */
@@ -185,7 +220,7 @@ static int as608CmdHiSpeedSearch(uint16_t startPage, uint16_t pageCount, uint16_
     as608FlushRx(2);
     as608WritePacket(0x01, payload, sizeof(payload));
     uint8_t resp[32];
-    size_t n = as608Recv(resp, sizeof(resp), 250);
+    size_t n = as608Recv(resp, sizeof(resp), AS608_SEARCH_TIMEOUT_MS);
     if(n < 14) return -1;
     if(resp[0]!=0xEF || resp[1]!=0x01) return -1;
     if(resp[6]!=0x07) return -1;
@@ -238,7 +273,7 @@ bool as608PollHuella(uint16_t *idOut, uint16_t *scoreOut){
         printf("[AS608][DBG] Dedo detectado (GetImage OK)\r\n");
     }
     // Pequeña espera adicional antes de convertir
-    delay(100);
+    delay(AS608_ENROLL_STEP_DELAY_MS);
     uint8_t tz = as608CmdImage2Tz(0x01);
     if (tz != 0x00){
         g_as608Stats.image2tzFail++;
@@ -271,28 +306,28 @@ bool as608PollHuella(uint16_t *idOut, uint16_t *scoreOut){
 /* Comando RegModel (0x05) para combinar CharBuffer1 y CharBuffer2 en un template */
 static uint8_t as608CmdRegModel(void){
     uint8_t payload[] = { 0x05 };
-    as608FlushRx(2);
+    as608FlushRx(AS608_FLUSH_MS_TINY);
     as608WritePacket(0x01, payload, sizeof(payload));
     uint8_t resp[32];
-    return as608GetAck(resp, sizeof(resp), 300);
+    return as608GetAck(resp, sizeof(resp), AS608_REGMODEL_TIMEOUT_MS);
 }
 
 /* Comando Store (0x06) buffer=0x01, ID destino */
 static uint8_t as608CmdStore(uint16_t id){
     uint8_t payload[] = { 0x06, 0x01, (uint8_t)(id>>8), (uint8_t)(id&0xFF) };
-    as608FlushRx(2);
+    as608FlushRx(AS608_FLUSH_MS_TINY);
     as608WritePacket(0x01, payload, sizeof(payload));
     uint8_t resp[32];
-    return as608GetAck(resp, sizeof(resp), 500);
+    return as608GetAck(resp, sizeof(resp), AS608_STORE_TIMEOUT_MS);
 }
 
 /* Comando TemplateCount (0x1D): devuelve cantidad de templates almacenados */
 static int as608CmdTemplateCount(void){
     uint8_t payload[] = { 0x1D };
-    as608FlushRx(2);
+    as608FlushRx(AS608_FLUSH_MS_TINY);
     as608WritePacket(0x01, payload, sizeof(payload));
     uint8_t resp[32];
-    size_t n = as608Recv(resp, sizeof(resp), 3000);
+    size_t n = as608Recv(resp, sizeof(resp), AS608_TEMPLATECOUNT_TIMEOUT_MS);
     if(n < 14) return -1;
     if(resp[0]!=0xEF || resp[1]!=0x01) return -1;
     if(resp[6]!=0x07) return -1;
@@ -319,7 +354,7 @@ bool as608Enroll(char idOut[5]){
         uint8_t r = as608CmdGetImageLong();
         if(r == 0x00){
             printf("[AS608][ENROLL] Imagen 1 capturada\r\n");
-            delay(100);
+            delay(AS608_ENROLL_STEP_DELAY_MS);
             uint8_t tz = as608CmdImage2Tz(0x01);
             if(tz != 0x00){
                 printf("[AS608][ENROLL] Error Image2Tz(1) code=0x%02X\r\n", tz);
@@ -328,13 +363,13 @@ bool as608Enroll(char idOut[5]){
             break;
         } else if (r == 0x02){
             // Sin dedo, esperar un poco más para no saturar
-            delay(120);
+            delay(AS608_ENROLL_NOFINGER_DELAY_MS);
         } else {
             errorCount++;
             if(errorCount % 5 == 0){
                 printf("[AS608][ENROLL] GetImage errores acumulados=%d (último=0x%02X)\r\n", errorCount, r);
             }
-            delay(150);
+            delay(AS608_ENROLL_ERROR_DELAY_MS);
         }
     }
     if((tickRead() - start) >= 10000){
@@ -357,7 +392,7 @@ bool as608Enroll(char idOut[5]){
         uint8_t r = as608CmdGetImageLong();
         if(r == 0x00){
             printf("[AS608][ENROLL] Imagen 2 capturada\r\n");
-            delay(100);
+            delay(AS608_ENROLL_STEP_DELAY_MS);
             uint8_t tz = as608CmdImage2Tz(0x02);
             if(tz != 0x00){
                 printf("[AS608][ENROLL] Error Image2Tz(2) code=0x%02X\r\n", tz);
@@ -365,13 +400,13 @@ bool as608Enroll(char idOut[5]){
             }
             break;
         } else if (r == 0x02){
-            delay(120);
+            delay(AS608_ENROLL_NOFINGER_DELAY_MS);
         } else {
             errorCount++;
             if(errorCount % 5 == 0){
                 printf("[AS608][ENROLL] GetImage errores acumulados=%d (último=0x%02X)\r\n", errorCount, r);
             }
-            delay(150);
+            delay(AS608_ENROLL_ERROR_DELAY_MS);
         }
     }
     if((tickRead() - start) >= 10000){
@@ -412,7 +447,7 @@ void as608Init(uint32_t baudrate){
     if(baudrate == 0) baudrate = AS608_DEFAULT_BAUD;
     uartConfig(AS608_UART, baudrate);
     printf("\r\n[AS608] UART inicializado en %u baud\r\n", (unsigned)baudrate);
-    printf("[AS608] Mapeado en canal sAPI=%d (UART_485=1, UART_USB=3, UART_232=5)\r\n", (int)AS608_UART);
+    printf("[AS608] Mapeado: sAPI_index=%d (UART_GPIO=0->GPIO1/GPIO2, UART_485=1, UART_USB=3, UART_232=5)\r\n", (int)AS608_UART);
     // Limpiar cualquier basura previa del buffer RX
     as608FlushRx(10);
     bool as608Ok = as608Check();
@@ -439,9 +474,9 @@ bool as608Probe(void){
             0xEF,0x01, 0xFF,0xFF,0xFF,0xFF, 0x01, 0x00,0x07, 0x13, 0x00,0x00,0x00,0x00, 0x00,0x1B
         };
         as608Send(cmdVfyPwd, sizeof(cmdVfyPwd));
-        delay(5);
+        delay(AS608_DELAY_BEFORE_SEND_MS);
         uint8_t resp[64];
-        size_t n = as608Recv(resp, sizeof(resp), 3000);
+        size_t n = as608Recv(resp, sizeof(resp), AS608_PROBE_TIMEOUT_MS);
         printf("[AS608][PROBE] Bytes recibidos: %u\r\n", (unsigned)n);
         if(n>0){
             printf("[AS608][PROBE] Actividad detectada en %u baud\r\n", (unsigned)br);
@@ -471,12 +506,12 @@ bool as608Check(void){
         0x00, 0x1B                      // Checksum (0x01+0x00+0x07+0x13+0x00*4 = 0x1B)
     };
     // Vaciar RX antes del envío
-    as608FlushRx(2);
+    as608FlushRx(AS608_FLUSH_MS_TINY);
     as608Send(cmdVfyPwd, sizeof(cmdVfyPwd));
     // Dar tiempo mínimo al módulo a responder
-    delay(5);
+    delay(AS608_CHECK_DELAY_MS);
     uint8_t resp[32];
-    size_t n = as608Recv(resp, sizeof(resp), 3000);
+    size_t n = as608Recv(resp, sizeof(resp), AS608_CHECK_TIMEOUT_MS);
     
     if(n < 12){
         printf("[AS608][CHECK] Respuesta insuficiente (%u bytes)\r\n", (unsigned)n);
@@ -552,7 +587,7 @@ bool grabarHuella(char idOut[5]){
 
     // Si no se encontró ID, simular uno (para pruebas)
     strcpy(idOut, "0001");
-    printf("[AS608] Huella registrada (sim) ID=%s\r\n", idOut);
+    printf("[AS608] Huella registrada (SIMULADA!!!) ID=%s\r\n", idOut);
     return true;
 }
 

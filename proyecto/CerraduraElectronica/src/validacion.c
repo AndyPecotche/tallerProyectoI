@@ -12,8 +12,7 @@
 --------------------------------------------------------------------------- */
 PinUsuario_t listaPins[MAX_PINS] = {
     { "11111", true, "", "", "master" },  // PIN maestro
-    { "12345", true, "9876543210FF", "0001", "juan" },
-    { "23456", true, "1234567890AB", "0002", "pedro" }
+    { "12345", true, "9876543210FF", "0001", "andy" }
 };
 
 /* ---------------------------------------------------------------------------
@@ -147,13 +146,19 @@ const char* obtenerTagPorHuella(const char *huellaId) {
 --------------------------------------------------------------------------- */
 bool validarHuella(const char *huellaId){
     if(!huellaId) return false;
+    printf("\r\n[DEBUG] Buscando huella: '%s'\r\n", huellaId);
     for (int i = 0; i < MAX_PINS; i++) {
+        if (listaPins[i].activo) {
+            printf("[DEBUG] Pin[%d]: activo=%d huella='%s' strlen=%u\r\n", 
+                   i, listaPins[i].activo, listaPins[i].huella, (unsigned)strlen(listaPins[i].huella));
+        }
         if (listaPins[i].activo && strlen(listaPins[i].huella) > 0 && strcmp(listaPins[i].huella, huellaId) == 0) {
             const char *tag = (strlen(listaPins[i].tag) > 0)? listaPins[i].tag : "usuario";
             printf("\r\n[ACCESO] Huella ID=%s - Bienvenido, %s\r\n", huellaId, tag);
             return true;
         }
     }
+    printf("[DEBUG] No se encontró coincidencia para huella '%s'\r\n", huellaId);
     return false;
 }
 
