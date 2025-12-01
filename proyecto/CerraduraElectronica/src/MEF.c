@@ -16,17 +16,19 @@ static EstadoMEF_t estadoActual;
 static char pinIngresado[6];
 static int intentosFallidos = 0;
 
-#define TIMEOUT_MS     30000  // N segundos para ingresar PIN
+#define TIMEOUT_MS     20000  // N segundos para ingresar PIN
 
 #define OMITIR_SENSOR_CIERRE 1 // 1 = omitir chequeo de sensor de cierre (para pruebas)
 #define OMITIR_MOTOR 1         // 1 = omitir control de motor (para pruebas)
-#define SIMULAR_RFID_INTERRUPT 1 // 1 = simular interrupción de RFID con TEC2
-#define SIMULAR_PRESENCIA_INTERRUPT 1 // 1 = simular interrupción de presencia con TEC1
-
+#define SIMULAR_RFID_INTERRUPT 0 // 1 = simular interrupción de RFID con TEC2
+#define SIMULAR_PRESENCIA_INTERRUPT 0 // 0 = usar MDIO (P1_17 -> GPIO0[12]) para presencia
+#define ALERTAS_ENABLE 1        // 1 = habilitar alertas sonoras/LED
+#define SENSOR_WIFI_ENABLE 0    // 1 = habilitar módulo WiFi ESP AT
+#define SENSOR_HUELLA_ENABLE 1  // 1 = habilitar módulo de huella
 
 // Configuración del sensor de cierre en GPIO0[1]
-#define SENSOR_GPIO_PORT 0
-#define SENSOR_GPIO_PIN  1
+#define SENSORHALL_GPIO_PORT 0
+#define SENSORHALL_GPIO_PIN  1
 
 bool_t open = false;
 
@@ -85,25 +87,43 @@ void GPIO1_IRQHandler(void){
 /* ---------------------------------------------------------------------------
    Configuración de interrupción en TEC1
 --------------------------------------------------------------------------- */
+
+static void configurarPines(void){
+    // Configurar GPIO0[1] como entrada para el sensor de cierre
+    // Pin físico P0_1 mapeado en func0 como GPIO0[1] como entrada con buffer habilitado
+    Chip_SCU_PinMux(0, 1, SCU_MODE_INACT | SCU_MODE_INBUFF_EN | SCU_MODE_ZIF_DIS, FUNC0);
+    Chip_GPIO_SetPinDIRInput(LPC_GPIO_PORT, SENSORHALL_GPIO_PORT, SENSORHALL_GPIO_PIN);
+}
+
 static void configurarInterrupcionPRESENCIA(void){
+
     Chip_PININT_Init(LPC_GPIO_PIN_INT);
     if (SIMULAR_PRESENCIA_INTERRUPT) {
         Chip_SCU_GPIOIntPinSel(0, 0, 4); // TEC1 -> GPIO0[4]
     } else {
-        Chip_SCU_GPIOIntPinSel(0, 0, 12); // PRESENCIA -> GPIO0[12]
+        // Configurar pin P1_17 como GPIO0[12] para entrada de interrupcion por presencia
+        // Usar pull-up para estabilizar nivel alto (idle) y evitar flotación
+        Chip_SCU_PinMux(1, 17, SCU_MODE_PULLUP | SCU_MODE_INBUFF_EN | SCU_MODE_ZIF_DIS, FUNC0);
+        Chip_GPIO_SetPinDIRInput(LPC_GPIO_PORT, 0, 12);
+        Chip_SCU_GPIOIntPinSel(0, 0, 12); // PRESENCIA -> GPIO0[12] (MDIO en P1_17 como GPIO)
     }
     Chip_PININT_ClearIntStatus(LPC_GPIO_PIN_INT, PININTCH0);
     Chip_PININT_SetPinModeEdge(LPC_GPIO_PIN_INT, PININTCH0);
-    Chip_PININT_EnableIntLow(LPC_GPIO_PIN_INT, PININTCH0);
+    // Señal activa en alto: generar evento en flanco ascendente
+    Chip_PININT_EnableIntHigh(LPC_GPIO_PIN_INT, PININTCH0);
     NVIC_ClearPendingIRQ(PIN_INT0_IRQn);
     NVIC_EnableIRQ(PIN_INT0_IRQn);
 }
 
 static void configurarInterrupcionRFID(void){
+
     Chip_PININT_Init(LPC_GPIO_PIN_INT);
     if (SIMULAR_RFID_INTERRUPT) {
         Chip_SCU_GPIOIntPinSel(1, 0, 8); // Canal 1: TEC2 -> GPIO0[8]
     } else {
+        //Configurar P4_5 en func0 como GPIO2[5] entrada para RFID para interrupcion
+        Chip_SCU_PinMux(4, 5, SCU_MODE_INACT | SCU_MODE_INBUFF_EN | SCU_MODE_ZIF_DIS, FUNC0);
+        Chip_GPIO_SetPinDIRInput(LPC_GPIO_PORT, 2, 5);
         Chip_SCU_GPIOIntPinSel(1, 2, 5); // Canal 1: RFID -> GPIO2[5]
     }
     Chip_PININT_ClearIntStatus(LPC_GPIO_PIN_INT, PININTCH1);
@@ -146,19 +166,15 @@ static void leerRFID(void){
 --------------------------------------------------------------------------- */
 void mefInit(void){
     boardConfig();
+    configurarPines();
     tecladoInit();
-    alertasInit();
-    espATInit(115200);
+    if (ALERTAS_ENABLE) alertasInit();
+    if (SENSOR_WIFI_ENABLE) { espATInit(115200); sincronizarConServidor(); }
+    if (SENSOR_HUELLA_ENABLE) {as608Init(0); as608SetDebug(1); as608ScanReset();}
+    // Nivel de debug fingerprint (1=básico, 2=detallado) // Preparar mini MEF del AS608
     configurarInterrupcionPRESENCIA();
     configurarInterrupcionRFID();
-    as608Init(0);
-    as608SetDebug(1);// Nivel de debug fingerprint (1=básico, 2=detallado)
-    as608ScanReset(); // Preparar mini MEF del AS608
-    sincronizarConServidor();
-    // Configurar GPIO0[1] como entrada para el sensor de cierre
-    // Pin físico P0_1 mapeado a GPIO0[1] como entrada con buffer habilitado
-    Chip_SCU_PinMux(0, 1, SCU_MODE_INACT | SCU_MODE_INBUFF_EN | SCU_MODE_ZIF_DIS, FUNC0);
-    Chip_GPIO_SetPinDIRInput(LPC_GPIO_PORT, SENSOR_GPIO_PORT, SENSOR_GPIO_PIN);
+
 
     estadoActual = LEER_PIN;
     printf("\r\n[SISTEMA] Cerradura electrónica iniciada.\r\n");
@@ -325,7 +341,7 @@ void mefUpdate(void){
                     break;
                   }
 		          {
-		              bool_t sensorState = Chip_GPIO_GetPinState(LPC_GPIO_PORT, SENSOR_GPIO_PORT, SENSOR_GPIO_PIN);
+		              bool_t sensorState = Chip_GPIO_GetPinState(LPC_GPIO_PORT, SENSORHALL_GPIO_PORT, SENSORHALL_GPIO_PIN);
 		              printf("\r\n[DEBUG] Estado sensor GPIO0[1]: %d (0=bajo/cerrado, 1=alto/abierto)\r\n", sensorState);
 		              
 		              if(!sensorState){
