@@ -50,11 +50,10 @@ typedef enum {
 	AS608_SCAN_ERROR
 } as608ScanStatus_t;
 
-/* Reinicia el estado interno del escaneo (queda listo para comenzar). */
-void as608ScanReset(void);
+
 
 /* Avanza la mini MEF en pasos cortos (2-5ms por llamada).
- * Retorna el estado actual del proceso:
+	bool as608EnrollAtId(uint16_t idTarget, char idOut[5]);
  * - AS608_SCAN_INPROGRESS: continuar llamando en el próximo ciclo
  * - AS608_SCAN_MATCH: se encontró coincidencia, idOut/scoreOut válidos
  * - AS608_SCAN_NOMATCH: sin coincidencia o sin dedo
