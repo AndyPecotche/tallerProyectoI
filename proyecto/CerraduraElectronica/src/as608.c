@@ -239,6 +239,48 @@ static int as608CmdTemplateCount(void){
     return count;
 }
 
+/* Comando LoadChar (0x07): intenta cargar un template desde flash al buffer
+ * Retorna confirm code: 0x00=OK, 0x0C=error leyendo template (ID no existe), etc. */
+static uint8_t as608CmdLoadChar(uint8_t bufId, uint16_t pageId){
+    uint8_t extra[3] = { bufId, (uint8_t)(pageId>>8), (uint8_t)(pageId&0xFF) };
+    return as608CmdAck(0x07, extra, sizeof(extra),
+                       300,  // timeout ms
+                       0,    // no pre-delay
+                       AS608_FLUSH_MS_TINY);
+}
+
+/* Busca el primer ID libre en el rango [0, maxId] usando LoadChar.
+ * Retorna el ID libre encontrado, o -1 si no hay espacio. */
+static int as608FindFreeId(uint16_t maxId){
+    for(uint16_t id = 0; id <= maxId; id++){
+        uint8_t r = as608CmdLoadChar(0x01, id);
+        if(r == 0x0C){  // 0x0C = error al leer template (no existe)
+            return (int)id;
+        }
+        // 0x00 = existe, continuar buscando
+    }
+    return -1; // no hay espacio libre
+}
+
+/* Comando Empty (0x0D): borra todos los templates almacenados */
+static uint8_t as608CmdEmpty(void){
+    return as608CmdAck(0x0D, NULL, 0,
+                       2000, // timeout ms
+                       0,
+                       AS608_FLUSH_MS_SHORT);
+}
+
+bool as608ClearAllTemplates(void){
+    printf("\r\n[AS608] Borrando todas las huellas (Empty) ...\r\n");
+    uint8_t r = as608CmdEmpty();
+    if(r == 0x00){
+        printf("[AS608] Templates borrados correctamente\r\n");
+        return true;
+    }
+    printf("[AS608] Error al borrar templates, code=0x%02X\r\n", r);
+    return false;
+}
+
 /* Helper: ciclo de captura y conversión Image2Tz para ENROLL */
 static bool as608EnrollCapture(uint8_t slot, int pasoIndex){
     // Flush agresivo inicial para limpiar cualquier estado residual de la mini MEF
@@ -309,14 +351,13 @@ bool as608Enroll(char idOut[5]){
     // Espera breve para que el usuario lea el mensaje
     delay(2000);
     if(!as608EnrollCapture(0x01, 1)) return false;
-
-    printf("[AS608][ENROLL] Retire dedo...\r\n");
-    delay(3000);
+    printf("[AS608][ENROLL] Espere...\r\n");
+    delay(500);
     
     // Flush adicional entre capturas
     as608FlushRx(50);
     
-    printf("[AS608][ENROLL] Paso 2: Coloque nuevamente el mismo dedo (imágen 2)\r\n");
+    printf("[AS608][ENROLL] Paso 2: Capturando (imágen 2)\r\n");
     delay(2000); // Espera breve antes de segundo escaneo
     if(!as608EnrollCapture(0x02, 2)) return false;
 
@@ -327,16 +368,14 @@ bool as608Enroll(char idOut[5]){
     }
     printf("[AS608][ENROLL] Modelo creado\r\n");
 
-    int count = as608CmdTemplateCount();
-    if(count < 0){
-        printf("[AS608][ENROLL] Error leyendo cantidad de templates\r\n");
+    // Buscar primer ID libre en lugar de usar TemplateCount
+    printf("[AS608][ENROLL] Buscando ID libre...\r\n");
+    int newId = as608FindFreeId(0x00A3);
+    if(newId < 0){
+        printf("[AS608][ENROLL] Sin espacio para nueva huella (capacidad llena)\r\n");
         return false;
     }
-    uint16_t newId = (uint16_t)count; // usar siguiente índice libre (asumiendo contiguos)
-    if(newId > 0x00A3){
-        printf("[AS608][ENROLL] Sin espacio para nueva huella (ID=%u)\r\n", (unsigned)newId);
-        return false;
-    }
+    printf("[AS608][ENROLL] ID libre encontrado: %d\r\n", newId);
 
     uint8_t st = as608CmdStore(newId);
     if(st != 0x00){
@@ -346,6 +385,49 @@ bool as608Enroll(char idOut[5]){
     printf("[AS608][ENROLL] Huella almacenada ID=%u\r\n", (unsigned)newId);
     // Formatear a 4 dígitos
     snprintf((char*)idOut, 5, "%04u", (unsigned)newId);
+    return true;
+}
+
+/* Enroll almacenando en un ID específico (sobrescribe si existe) */
+bool as608EnrollAtId(uint16_t idTarget, char idOut[5]){
+    if(!idOut) return false;
+    memset(idOut,0,5);
+    
+    // Preparación del sensor
+    printf("\r\n[AS608][ENROLL@ID] Preparando sensor...\r\n");
+    as608FlushRx(100);
+    delay(200);
+    
+    printf("[AS608][ENROLL@ID] Paso 1: Coloque dedo (imágen 1)\r\n");
+    delay(2000);
+    if(!as608EnrollCapture(0x01, 1)) return false;
+
+    printf("[AS608][ENROLL@ID] Retire dedo...\r\n");
+    delay(3000);
+    as608FlushRx(50);
+    printf("[AS608][ENROLL@ID] Paso 2: Coloque nuevamente el mismo dedo (imágen 2)\r\n");
+    delay(2000);
+    if(!as608EnrollCapture(0x02, 2)) return false;
+
+    uint8_t rm = as608CmdRegModel();
+    if(rm != 0x00){
+        printf("[AS608][ENROLL@ID] Error RegModel code=0x%02X\r\n", rm);
+        return false;
+    }
+    printf("[AS608][ENROLL@ID] Modelo creado\r\n");
+
+    if(idTarget > 0x00A3){
+        printf("[AS608][ENROLL@ID] ID fuera de rango: %u\r\n", (unsigned)idTarget);
+        return false;
+    }
+
+    uint8_t st = as608CmdStore(idTarget);
+    if(st != 0x00){
+        printf("[AS608][ENROLL@ID] Error Store ID=%u code=0x%02X\r\n", (unsigned)idTarget, st);
+        return false;
+    }
+    printf("[AS608][ENROLL@ID] Huella almacenada ID=%u\r\n", (unsigned)idTarget);
+    snprintf((char*)idOut, 5, "%04u", (unsigned)idTarget);
     return true;
 }
 
@@ -550,6 +632,8 @@ as608ScanStatus_t as608ScanStep(uint16_t *idOut, uint16_t *scoreOut){
                         g_scan.lastScore = ((uint16_t)g_scan.resp[12]<<8) | g_scan.resp[13];
                         if (idOut) *idOut = g_scan.lastId;
                         if (scoreOut) *scoreOut = g_scan.lastScore;
+                        // Mensaje solicitado: siempre que haya match almacenado, imprimir ID
+                        printf("\r\nHOLA DESDE SENSOR AS608, TU HUELLA ES EL ID: %u\r\n", (unsigned)g_scan.lastId);
                         if (g_as608DebugLevel >= 2){
                             printf("[AS608][DBG2] Match ID=%u Score=%u\r\n", (unsigned)g_scan.lastId, (unsigned)g_scan.lastScore);
                         }

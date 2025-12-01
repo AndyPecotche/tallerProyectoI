@@ -12,7 +12,11 @@
 --------------------------------------------------------------------------- */
 PinUsuario_t listaPins[MAX_PINS] = {
     { "11111", true, "", "", "master" },  // PIN maestro
-    { "12345", true, "9876543210FF", "0001", "andy" }
+    { "22222", true, "9876543210FF", "0001", "andy" },
+    { "33333", true, "1234567890AB", "0002", "pepe" },
+    { "44444", true, "1211899891AA", "0003", "juan" },
+    { "55555", true, "", "0004", "invitado" },
+    { "66666", true, "", "0005", "usuario6" }
 };
 
 /* ---------------------------------------------------------------------------
@@ -159,6 +163,27 @@ bool validarHuella(const char *huellaId){
         }
     }
     printf("[DEBUG] No se encontró coincidencia para huella '%s'\r\n", huellaId);
+    return false;
+}
+
+/* ---------------------------------------------------------------------------
+   Obtener el ID de huella asignado para un PIN
+   - Si tiene asignado en listaPins, se devuelve ese
+   - Si no, se deriva uno estable usando el índice del arreglo
+--------------------------------------------------------------------------- */
+bool obtenerHuellaAsignadaPorPin(const char *pin, char outId[5]){
+    if(!pin || !outId) return false;
+    for (int i = 0; i < MAX_PINS; i++) {
+        if (listaPins[i].activo && strcmp(listaPins[i].codigo, pin) == 0) {
+            if (strlen(listaPins[i].huella) >= 4) {
+                strncpy(outId, listaPins[i].huella, 4);
+                outId[4] = '\0';
+            } else {
+                snprintf(outId, 5, "%04d", i);
+            }
+            return true;
+        }
+    }
     return false;
 }
 

@@ -19,8 +19,13 @@ void as608Init(uint32_t baudrate);
 bool as608PollHuella(uint16_t *idOut, uint16_t *scoreOut);
 
 
-/* Enroll real: captura dos imágenes, crea modelo y almacena, devuelve ID (4 dígitos) */
+/* Enroll real: captura dos imágenes, crea modelo y almacena.
+ * Variante 1: almacena en el primer ID libre y devuelve el ID (4 dígitos) */
 bool as608Enroll(char idOut[5]);
+
+/* Variante 2: almacena en un ID específico (sobrescribe si existe).
+ * Retorna true en éxito y escribe el mismo ID en idOut (formato 4 dígitos). */
+bool as608EnrollAtId(uint16_t idTarget, char idOut[5]);
 
 /* Ajusta nivel de debug en tiempo de ejecución.
  * level 0: silencioso (solo mensajes de alto nivel ya existentes)
@@ -60,5 +65,8 @@ as608ScanStatus_t as608ScanStep(uint16_t *idOut, uint16_t *scoreOut);
 
 /* Obtiene la cantidad de templates almacenados (para diagnóstico). */
 int as608GetTemplateCount(void);
+
+/* Borra todos los templates almacenados en el sensor (comando Empty 0x0D). */
+bool as608ClearAllTemplates(void);
 
 #endif /* AS608_H_ */

@@ -360,7 +360,7 @@ void mefUpdate(void){
             break;
             
          case MENU_ADMIN:
-                printf("\r\n[ADMIN] OPCIONES: 1=RFID | 2=Registrar huella | 3=Reset WiFi \r\n");
+                printf("\r\n[ADMIN] OPCIONES: 1=RFID | 2=Registrar huella | 3=Reset WiFi | 4=Limpiar huellas sensor \r\n");
             char opcion = 0;
 
             while (!opcion) {
@@ -371,7 +371,7 @@ void mefUpdate(void){
                 delay(60);
             }
 
-            switch (opcion) {
+                switch (opcion) {
                 case '1':
                     estadoActual = REGISTRAR_RFID;
                     break;
@@ -392,6 +392,15 @@ void mefUpdate(void){
                     }
                     estadoActual = LEER_PIN;
                     break;
+                    case '4':
+                        printf("\r\n[ADMIN] Limpiando todas las huellas del sensor...\r\n");
+                        if (as608ClearAllTemplates()) {
+                            printf("\r\n[ADMIN] Huellas del sensor borradas correctamente\r\n");
+                        } else {
+                            printf("\r\n[ADMIN] Error al borrar huellas del sensor\r\n");
+                        }
+                        estadoActual = LEER_PIN;
+                        break;
                 default:
                     printf("\r\n[ADMIN] Opción inválida\r\n");
                     estadoActual = LEER_PIN;
@@ -448,8 +457,19 @@ void mefUpdate(void){
                 bool finalizar = false;
                 while(!finalizar){
                     printf("\r\n[ADMIN] Iniciando ENROLL de huella para PIN %s\r\n", pinValidado);
+                    
+                    // Obtener ID objetivo desde base de usuarios
+                    char idObjetivoStr[5] = {0};
+                    if(!obtenerHuellaAsignadaPorPin(pinValidado, idObjetivoStr)){
+                        printf("\r\n[ERROR] No se encontró el PIN para obtener ID de huella\r\n");
+                        finalizar = true;
+                        break;
+                    }
+                    
+                    // Convertir a entero
+                    uint16_t idObjetivo = (uint16_t)strtoul(idObjetivoStr, NULL, 10);
                     char idHuella[5] = {0};
-                    if (as608Enroll(idHuella)) {
+                    if (as608EnrollAtId(idObjetivo, idHuella)) {
                         if (asociarHuellaaPin(pinValidado, idHuella)) {
                             printf("\r\n[ADMIN] Huella asociada al PIN %s (ID=%s)\r\n", pinValidado, idHuella);
                         } else {

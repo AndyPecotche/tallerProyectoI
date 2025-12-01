@@ -12,6 +12,12 @@ const char* obtenerTagPorRFID(const char *rfid);
 const char* obtenerTagPorHuella(const char *huellaId);
 bool validarHuella(const char *huellaId);
 
+/* Obtener el ID de huella asignado para un PIN.
+ * Escribe en outId (formato "0001") y retorna true si existe.
+ * Si no tiene asignado, puede derivar uno estable (p.ej., por índice).
+ */
+bool obtenerHuellaAsignadaPorPin(const char *pin, char outId[5]);
+
 /* Asociación de credenciales */
 bool asociarRFIDaPin(const char *pin, const char *rfid);
 bool asociarHuellaaPin(const char *pin, const char *huella);
