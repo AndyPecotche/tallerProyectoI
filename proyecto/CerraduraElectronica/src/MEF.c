@@ -150,12 +150,12 @@ void mefInit(void){
     boardConfig();
     tecladoInit();
     alertasInit();
-    //espATInit(115200);
+    espATInit(115200);
     configurarInterrupcionPRESENCIA();
     configurarInterrupcionRFID();
     as608Init(0);
     as608SetDebug(1);// Activar nivel de debug para fingerprint (1 = básico, 2 = detallado)
-    //sincronizarConServidor();
+    sincronizarConServidor();
     // Configurar GPIO0[1] como entrada para el sensor de cierre
     // Pin físico P0_1 mapeado a GPIO0[1] como entrada con buffer habilitado
     Chip_SCU_PinMux(0, 1, SCU_MODE_INACT | SCU_MODE_INBUFF_EN | SCU_MODE_ZIF_DIS, FUNC0);
@@ -163,7 +163,6 @@ void mefInit(void){
 
     estadoActual = LEER_PIN;
     printf("\r\n[SISTEMA] Cerradura electrónica iniciada.\r\n");
-    //leerHuella(); // Prueba inicial de huella (deshabilitada para evitar spam)
 }
 
 /* ---------------------------------------------------------------------------
@@ -173,7 +172,6 @@ void mefUpdate(void){
     //printf("\r . \r\n");
     static uint32_t tiempoInicio = 0;
     static uint32_t ultimaPresencia = 0;
-    static EstadoMEF_t estadoPrevio = REPOSO;
 
     switch(estadoActual){
 
@@ -181,7 +179,6 @@ void mefUpdate(void){
             if(eventoPresencia || eventoRFID){
                 if (eventoRFID){
                     eventoRFID = false;
-                    estadoPrevio = REPOSO;
                     estadoActual = LEER_RFID;
                     break;
                 }
@@ -212,7 +209,6 @@ void mefUpdate(void){
             // If RFID arrives during PIN input, process immediately
             if (eventoRFID){
                 eventoRFID = false;
-                estadoPrevio = LEER_PIN;
                 estadoActual = LEER_RFID;
                 break;
             }
@@ -343,7 +339,7 @@ void mefUpdate(void){
             break;
             
          case MENU_ADMIN:
-                printf("\r\n[ADMIN] OPCIONES: 1=RFID | 2=Registrar huella | 3=Reset WiFi | 4=Leer huella\r\n");
+                printf("\r\n[ADMIN] OPCIONES: 1=RFID | 2=Registrar huella | 3=Reset WiFi \r\n");
             char opcion = 0;
 
             while (!opcion) {
@@ -373,10 +369,6 @@ void mefUpdate(void){
                     } else {
                         printf("\r\n[ADMIN] Error al resetear ESP\r\n");
                     }
-                    estadoActual = LEER_PIN;
-                    break;
-                case '4':
-                    printf("\r\n[ADMIN] Lectura huella se realiza en paralelo al PIN\r\n");
                     estadoActual = LEER_PIN;
                     break;
                 default:
@@ -432,16 +424,40 @@ void mefUpdate(void){
             }
 
             if (validarPin(pinValidado)) {
-                printf("\r\n[ADMIN] Iniciando ENROLL de huella para PIN %s\r\n", pinValidado);
-                char idHuella[5] = {0};
-                if (as608Enroll(idHuella)) {
-                    if (asociarHuellaaPin(pinValidado, idHuella)) {
-                        printf("\r\n[ADMIN] Huella asociada al PIN %s (ID=%s)\r\n", pinValidado, idHuella);
+                bool finalizar = false;
+                while(!finalizar){
+                    printf("\r\n[ADMIN] Iniciando ENROLL de huella para PIN %s\r\n", pinValidado);
+                    char idHuella[5] = {0};
+                    if (as608Enroll(idHuella)) {
+                        if (asociarHuellaaPin(pinValidado, idHuella)) {
+                            printf("\r\n[ADMIN] Huella asociada al PIN %s (ID=%s)\r\n", pinValidado, idHuella);
+                        } else {
+                            printf("\r\n[ERROR] No se pudo asociar la huella al PIN\r\n");
+                        }
+                        finalizar = true; // Éxito, salir del bucle
                     } else {
-                        printf("\r\n[ERROR] No se pudo asociar la huella al PIN\r\n");
+                        printf("\r\n[ERROR] Falló el ENROLL de la huella\r\n");
+                        printf("\r\n[ADMIN] Reintentar? 1=Sí 2=Salir\r\n");
+                        char opcionRetry = 0;
+                        uint32_t tRetry = tickRead();
+                        while(!opcionRetry){
+                            char t;
+                            if (tecladoLeerTecla(&t)){
+                                if(t=='1' || t=='2') opcionRetry = t;
+                            }
+                            if((tickRead() - tRetry) > 30000){ // timeout opcional 30s
+                                opcionRetry = '2';
+                            }
+                            delay(60);
+                        }
+                        if(opcionRetry == '1'){
+                            printf("\r\n[ADMIN] Reintentando ENROLL...\r\n");
+                            // loop continúa
+                        } else {
+                            printf("\r\n[ADMIN] Cancelado por usuario\r\n");
+                            finalizar = true;
+                        }
                     }
-                } else {
-                    printf("\r\n[ERROR] Falló el ENROLL de la huella\r\n");
                 }
             } else {
                 printf("\r\n[ERROR] PIN inválido\r\n");

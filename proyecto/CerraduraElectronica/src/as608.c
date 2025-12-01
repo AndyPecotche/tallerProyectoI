@@ -342,16 +342,20 @@ bool as608Enroll(char idOut[5]){
     memset(idOut,0,5);
     printf("\r\n[AS608][ENROLL] Inicio de registro de huella\r\n");
     printf("[AS608][ENROLL] Paso 1: Coloque dedo (imágen 1)\r\n");
+    // Espera adicional solicitada antes de iniciar escaneo
+    delay(5000);
     uint32_t start = tickRead();
     uint32_t lastAttempt = 0;
     int errorCount = 0;
-    while ((tickRead() - start) < 10000){
+    int tries1 = 0;
+    while (((tickRead() - start) < 10000) || (tries1 < 5)){
         if((tickRead() - lastAttempt) < AS608_ENROLL_ATTEMPT_INTERVAL_MS){
             delay(10);
             continue;
         }
         lastAttempt = tickRead();
         uint8_t r = as608CmdGetImageLong();
+        tries1++;
         if(r == 0x00){
             printf("[AS608][ENROLL] Imagen 1 capturada\r\n");
             delay(AS608_ENROLL_STEP_DELAY_MS);
@@ -372,7 +376,7 @@ bool as608Enroll(char idOut[5]){
             delay(AS608_ENROLL_ERROR_DELAY_MS);
         }
     }
-    if((tickRead() - start) >= 10000){
+    if(((tickRead() - start) >= 10000) && tries1 < 1){
         printf("[AS608][ENROLL] Timeout esperando dedo (imagen 1)\r\n");
         return false;
     }
@@ -380,16 +384,19 @@ bool as608Enroll(char idOut[5]){
     printf("[AS608][ENROLL] Retire dedo...\r\n");
     delay(1500);
     printf("[AS608][ENROLL] Paso 2: Coloque nuevamente el mismo dedo (imágen 2)\r\n");
+    delay(5000); // Espera adicional antes de segundo escaneo
     start = tickRead();
     lastAttempt = 0;
     errorCount = 0;
-    while ((tickRead() - start) < 10000){
+    int tries2 = 0;
+    while (((tickRead() - start) < 10000) || (tries2 < 5)){
         if((tickRead() - lastAttempt) < AS608_ENROLL_ATTEMPT_INTERVAL_MS){
             delay(10);
             continue;
         }
         lastAttempt = tickRead();
         uint8_t r = as608CmdGetImageLong();
+        tries2++;
         if(r == 0x00){
             printf("[AS608][ENROLL] Imagen 2 capturada\r\n");
             delay(AS608_ENROLL_STEP_DELAY_MS);
@@ -409,7 +416,7 @@ bool as608Enroll(char idOut[5]){
             delay(AS608_ENROLL_ERROR_DELAY_MS);
         }
     }
-    if((tickRead() - start) >= 10000){
+    if(((tickRead() - start) >= 10000) && tries2 < 1){
         printf("[AS608][ENROLL] Timeout esperando dedo (imagen 2)\r\n");
         return false;
     }
