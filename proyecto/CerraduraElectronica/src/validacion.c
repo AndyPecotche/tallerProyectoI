@@ -16,7 +16,7 @@ PinUsuario_t listaPins[MAX_PINS] = {
     { "33333", true, "1234567890AB", "0002", "pepe" },
     { "44444", true, "1211899891AA", "0003", "juan" },
     { "55555", true, "", "0004", "invitado" },
-    { "66666", true, "", "0005", "usuario6" }
+    { "66666", true, "", "", "usuario6" } //Tiraria error al intentar grabar Huella
 };
 
 /* ---------------------------------------------------------------------------
@@ -178,10 +178,11 @@ bool obtenerHuellaAsignadaPorPin(const char *pin, char outId[5]){
             if (strlen(listaPins[i].huella) >= 4) {
                 strncpy(outId, listaPins[i].huella, 4);
                 outId[4] = '\0';
+                return true;
             } else {
-                snprintf(outId, 5, "%04d", i);
+                // No tiene ID de huella asignado: no permitir continuar
+                return false;
             }
-            return true;
         }
     }
     return false;
