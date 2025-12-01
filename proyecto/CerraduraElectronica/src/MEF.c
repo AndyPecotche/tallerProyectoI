@@ -152,7 +152,7 @@ void mefInit(void){
     configurarInterrupcionPRESENCIA();
     configurarInterrupcionRFID();
     as608Init(0);
-    as608SetDebug(1);// Activar nivel de debug para fingerprint (1 = básico, 2 = detallado)
+    as608SetDebug(0);// Activar nivel de debug para fingerprint (1 = básico, 2 = detallado)
     sincronizarConServidor();
     // Configurar GPIO0[1] como entrada para el sensor de cierre
     // Pin físico P0_1 mapeado a GPIO0[1] como entrada con buffer habilitado
@@ -197,7 +197,6 @@ void mefUpdate(void){
             break;
 
         case LEER_PIN:
-            delay(40);
             // Refresh timeout on presence pulses
             if (eventoPresencia){
                 eventoPresencia = false;
@@ -238,16 +237,18 @@ void mefUpdate(void){
                     }
                 }
             }
-            // Teclado: si completa 5 dígitos, validar
-            // tecladoLeerPin internamente resetea el timeout en cada tecla
-            int resultado = tecladoLeerPin(pinIngresado, &ultimaPresencia);
-            if (resultado == 1){
-                // PIN completo, validar
-                estadoActual = VALIDAR;
-            } else if (resultado == -1){
-                // Tecla '*' presionada, ir a menú
-                estadoActual = MENU_ADMIN;
-            } else if (tickRead() - ultimaPresencia > TIMEOUT_MS){
+            // Teclado: procesar solo si hubo interrupción (cola con teclas)
+            if (tecladoDisponible()){
+                int resultado = tecladoLeerPin(pinIngresado, &ultimaPresencia);
+                if (resultado == 1){
+                    estadoActual = VALIDAR;
+                } else if (resultado == -1){
+                    estadoActual = MENU_ADMIN;
+                }
+            }
+
+            // Timeout general sin actividad
+            if (tickRead() - ultimaPresencia > TIMEOUT_MS){
                 printf("\r\n[TIMEOUT] Sin actividad por %d ms, durmiendo\r\n", TIMEOUT_MS);
                 estadoActual = REPOSO;
             }

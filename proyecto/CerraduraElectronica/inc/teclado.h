@@ -12,4 +12,7 @@ void tecladoReset(void);
 int tecladoLeerPin(char *pin, uint32_t *ultimaActividad);
 bool tecladoLeerTecla(char *tecla);
 
+/* Evento: disponible cuando una IRQ de teclado encoló al menos una tecla */
+bool tecladoDisponible(void);
+
 #endif /* TECLADO_H_ */
