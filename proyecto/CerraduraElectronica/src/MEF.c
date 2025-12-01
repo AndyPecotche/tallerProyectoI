@@ -152,7 +152,7 @@ void mefInit(void){
     configurarInterrupcionPRESENCIA();
     configurarInterrupcionRFID();
     as608Init(0);
-    as608SetDebug(1);// Activar nivel de debug para fingerprint (1 = básico, 2 = detallado)
+    as608SetDebug(0);// Activar nivel de debug para fingerprint (1 = básico, 2 = detallado)
     sincronizarConServidor();
     // Configurar GPIO0[1] como entrada para el sensor de cierre
     // Pin físico P0_1 mapeado a GPIO0[1] como entrada con buffer habilitado
@@ -197,7 +197,6 @@ void mefUpdate(void){
             break;
 
         case LEER_PIN:
-            delay(40);
             // Refresh timeout on presence pulses
             if (eventoPresencia){
                 eventoPresencia = false;
@@ -213,7 +212,7 @@ void mefUpdate(void){
             // Poll huella con intervalo para no saturar UART
             {
                 static uint32_t ultimoIntentoHuella = 0;
-                const uint32_t INTERVALO_HUELLA_MS = 1000; // escaneo huella cada 1000ms para menor carga UART
+                const uint32_t INTERVALO_HUELLA_MS = 600; 
                 if (tickRead() - ultimoIntentoHuella >= INTERVALO_HUELLA_MS){
                     ultimoIntentoHuella = tickRead();
                     uint16_t id=0, score=0;

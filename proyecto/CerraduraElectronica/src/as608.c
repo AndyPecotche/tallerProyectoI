@@ -18,11 +18,9 @@
  * - AS608_FLUSH_MS_TINY: versión más corta del flush para comandos rápidos.
  * - AS608_DELAY_BEFORE_SEND_MS: pequeña espera antes de transmitir un paquete (estabiliza UART/sensor).
  * - AS608_GETIMAGE_TIMEOUT_MS: tiempo máximo esperando el ACK del comando GetImage.
- * - AS608_GETIMAGE_LONG_TIMEOUT_MS: variante de timeout más holgada para capturas durante ENROLL/polling.
  * - AS608_IMAGE2TZ_PRE_DELAY_MS: espera previa a convertir imagen a características (Image2Tz).
  * - AS608_IMAGE2TZ_TIMEOUT_MS: tiempo máximo esperando el ACK de Image2Tz.
  * - AS608_SEARCH_TIMEOUT_MS: tiempo máximo esperando respuesta de HiSpeedSearch.
- * - AS608_PROBE_TIMEOUT_MS: tiempo de espera al sondear baudios con VfyPwd.
  * - AS608_CHECK_DELAY_MS: pequeña espera tras VfyPwd antes de leer respuesta en as608Check.
  * - AS608_CHECK_TIMEOUT_MS: tiempo máximo esperando el ACK de VfyPwd en as608Check.
  * - AS608_TEMPLATECOUNT_TIMEOUT_MS: tiempo máximo esperando respuesta de TemplateCount.
@@ -32,13 +30,13 @@
  * - AS608_ENROLL_NOFINGER_DELAY_MS: pausa cuando no hay dedo detectado, para evitar saturar.
  * - AS608_ENROLL_ERROR_DELAY_MS: pausa ante errores de captura para dar estabilidad.
  */
-#define AS608_FLUSH_MS_SHORT           5
-#define AS608_FLUSH_MS_TINY            2
-#define AS608_DELAY_BEFORE_SEND_MS     5
-#define AS608_GETIMAGE_LONG_TIMEOUT_MS 300
-#define AS608_IMAGE2TZ_PRE_DELAY_MS    80
-#define AS608_IMAGE2TZ_TIMEOUT_MS      600
-#define AS608_SEARCH_TIMEOUT_MS        250
+#define AS608_FLUSH_MS_SHORT           2
+#define AS608_FLUSH_MS_TINY            1
+#define AS608_DELAY_BEFORE_SEND_MS     2
+#define AS608_GETIMAGE_LONG_TIMEOUT_MS 200  // Timeout suficiente para respuesta del sensor
+#define AS608_IMAGE2TZ_PRE_DELAY_MS    10   // Delay mínimo antes de conversión
+#define AS608_IMAGE2TZ_TIMEOUT_MS      400  // Timeout suficiente para Image2Tz
+#define AS608_SEARCH_TIMEOUT_MS        200  // Timeout suficiente para búsqueda
 #define AS608_CHECK_DELAY_MS           5
 #define AS608_CHECK_TIMEOUT_MS         3000
 #define AS608_TEMPLATECOUNT_TIMEOUT_MS 3000
@@ -64,21 +62,26 @@ static bool as608Send(const uint8_t *data, size_t len){
 static void as608FlushRx(uint32_t ms){
     uint32_t start = tickRead();
     uint8_t b;
+    // Limpiar buffer durante todo el tiempo especificado
     while ((tickRead() - start) < ms){
-        if (!uartReadByte(AS608_UART, &b)){
-            // No data right now, small wait
-            delay(1);
-        }
+        uartReadByte(AS608_UART, &b); // Descartar bytes si hay
     }
 }
 static size_t as608Recv(uint8_t *buf, size_t maxLen, uint32_t timeoutMs){
     uint32_t start = tickRead();
     size_t n = 0;
     uint8_t b;
+    uint32_t lastByte = start;
     while ((tickRead() - start) < timeoutMs){
         if (uartReadByte(AS608_UART, &b)){
             if (n < maxLen) buf[n++] = b;
             else break;
+            lastByte = tickRead();
+        } else {
+            // Si ya recibimos bytes y llevamos 30ms sin nuevos datos, asumir fin
+            if(n > 0 && (tickRead() - lastByte) > 30){
+                break;
+            }
         }
     }
     return n;
@@ -215,8 +218,8 @@ bool as608PollHuella(uint16_t *idOut, uint16_t *scoreOut){
     if(g_as608DebugLevel >= 1){
         printf("[AS608][DBG] Dedo detectado (GetImage OK)\r\n");
     }
-    // Pequeña espera adicional antes de convertir
-    delay(AS608_ENROLL_STEP_DELAY_MS);
+    // Delay mínimo para conversión
+    delay(10);
     uint8_t tz = as608CmdImage2Tz(0x01);
     if (tz != 0x00){
         if(g_as608DebugLevel >= 1){
