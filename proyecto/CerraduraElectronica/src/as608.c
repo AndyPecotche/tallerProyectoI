@@ -206,43 +206,6 @@ static int as608CmdHiSpeedSearch(uint16_t startPage, uint16_t pageCount, uint16_
     return 0;
 }
 
-bool as608PollHuella(uint16_t *idOut, uint16_t *scoreOut){
-    // Usar versión "long" para mayor robustez
-    uint8_t r = as608CmdGetImageLong();
-    if (r != 0x00){
-        if(g_as608DebugLevel >= 1 && r != 0x02){
-            printf("[AS608][DBG] GetImage code=0x%02X\r\n", r);
-        }
-        return false; // sin dedo o error
-    }
-    if(g_as608DebugLevel >= 1){
-        printf("[AS608][DBG] Dedo detectado (GetImage OK)\r\n");
-    }
-    // Delay mínimo para conversión
-    delay(10);
-    uint8_t tz = as608CmdImage2Tz(0x01);
-    if (tz != 0x00){
-        if(g_as608DebugLevel >= 1){
-            printf("[AS608][DBG] Image2Tz fallo code=0x%02X\r\n", tz);
-        }
-        return false; // conversión falló silenciosamente
-    }
-    uint16_t id=0, score=0;
-    int sr = as608CmdHiSpeedSearch(0x0000, 0x00A3, &id, &score);
-    if (sr == 0){
-        if(idOut) *idOut = id;
-        if(scoreOut) *scoreOut = score;
-        if(g_as608DebugLevel >= 1){
-            printf("[AS608][DBG] Coincidencia ID=%u score=%u\r\n", (unsigned)id, (unsigned)score);
-        }
-        return true; // éxito; el mensaje se mostrará fuera (MEF/validación)
-    }
-    if(g_as608DebugLevel >= 1){
-        printf("[AS608][DBG] Búsqueda sin coincidencia (sr=0x%02X)\r\n", (unsigned)sr);
-    }
-    return false;
-}
-
 /* Comando RegModel (0x05) para combinar CharBuffer1 y CharBuffer2 en un template */
 static uint8_t as608CmdRegModel(void){
     return as608CmdAck(0x05, NULL, 0,
@@ -278,6 +241,10 @@ static int as608CmdTemplateCount(void){
 
 /* Helper: ciclo de captura y conversión Image2Tz para ENROLL */
 static bool as608EnrollCapture(uint8_t slot, int pasoIndex){
+    // Flush agresivo inicial para limpiar cualquier estado residual de la mini MEF
+    as608FlushRx(50);
+    delay(100);
+    
     uint32_t start = tickRead();
     uint32_t lastAttempt = 0;
     int errorCount = 0;
@@ -290,12 +257,19 @@ static bool as608EnrollCapture(uint8_t slot, int pasoIndex){
             continue;
         }
         lastAttempt = tickRead();
+        
+        // Flush antes de cada intento para evitar datos viejos
+        as608FlushRx(10);
+        delay(50);
+        
         uint8_t r = as608CmdGetImageLong();
         tries++;
         
         if(r == 0x00){
             printf("[AS608][ENROLL] Imagen %d capturada (intento %d)\r\n", pasoIndex, tries);
-            delay(AS608_ENROLL_STEP_DELAY_MS);
+            // Flush y delay más largos antes de conversión
+            as608FlushRx(20);
+            delay(200);
             uint8_t tz = as608CmdImage2Tz(slot);
             if(tz != 0x00){
                 printf("[AS608][ENROLL] Error Image2Tz(%d) code=0x%02X\r\n", pasoIndex, tz);
@@ -324,6 +298,12 @@ static bool as608EnrollCapture(uint8_t slot, int pasoIndex){
 bool as608Enroll(char idOut[5]){
     if(!idOut) return false;
     memset(idOut,0,5);
+    
+    // Limpiar completamente el buffer UART antes de comenzar enroll
+    printf("\r\n[AS608][ENROLL] Preparando sensor...\r\n");
+    as608FlushRx(100);
+    delay(200);
+    
     printf("\r\n[AS608][ENROLL] Inicio de registro de huella\r\n");
     printf("[AS608][ENROLL] Paso 1: Coloque dedo (imágen 1)\r\n");
     // Espera breve para que el usuario lea el mensaje
@@ -331,7 +311,11 @@ bool as608Enroll(char idOut[5]){
     if(!as608EnrollCapture(0x01, 1)) return false;
 
     printf("[AS608][ENROLL] Retire dedo...\r\n");
-    delay(2000);
+    delay(3000);
+    
+    // Flush adicional entre capturas
+    as608FlushRx(50);
+    
     printf("[AS608][ENROLL] Paso 2: Coloque nuevamente el mismo dedo (imágen 2)\r\n");
     delay(2000); // Espera breve antes de segundo escaneo
     if(!as608EnrollCapture(0x02, 2)) return false;
