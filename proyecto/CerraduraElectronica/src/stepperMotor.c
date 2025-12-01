@@ -71,3 +71,15 @@ void step_move(bool_t dir)
     Chip_GPIO_SetPinState(LPC_GPIO_PORT, EN_GPIO_PORT, EN_GPIO_PIN, true); // HIGH = deshabilitado
 }
 
+void abrirCerradura(void){
+    printf("\r\n [MOTOR] Abriendo cerradura...\r\n");
+    step_move(ON);
+    printf("\r\n [SISTEMA] Cerradura abierta \r\n");
+}
+
+void cerrarCerradura(void){
+    printf("\r\n [MOTOR] Cerrando cerradura...\r\n");
+    step_move(OFF);
+    printf("\r\n [SISTEMA] Cerradura cerrada \r\n");
+}
+

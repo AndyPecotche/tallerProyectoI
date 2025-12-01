@@ -42,4 +42,8 @@
 void driverConfig(void);
 void step_move(bool_t);
 
+// Acciones de alto nivel para la cerradura
+void abrirCerradura(void);
+void cerrarCerradura(void);
+
 #endif /* __STEPPERMOTOR_H__ */

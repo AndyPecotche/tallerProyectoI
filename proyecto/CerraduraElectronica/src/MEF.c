@@ -16,7 +16,7 @@ static EstadoMEF_t estadoActual;
 static char pinIngresado[6];
 static int intentosFallidos = 0;
 
-#define TIMEOUT_MS     20000  // N segundos para ingresar PIN
+#define TIMEOUT_MS     30000  // N segundos para ingresar PIN
 
 #define OMITIR_SENSOR_CIERRE 1 // 1 = omitir chequeo de sensor de cierre (para pruebas)
 #define OMITIR_MOTOR 1         // 1 = omitir control de motor (para pruebas)
@@ -128,13 +128,11 @@ static void leerRFID(void){
         }
         alertaExito();
         intentosFallidos = 0;
-        printf("\r\n [MOTOR] Abriendo cerradura...\r\n");
         if (!OMITIR_MOTOR) {
-            step_move(ON);
+            abrirCerradura();
         } else {
             printf("\r\n[OMITIR MOTOR] Simulando apertura de cerradura\r\n");
         }
-        printf("\r\n [SISTEMA] Cerradura abierta \r\n");
         estadoActual = SENSOR_CIERRE;
     } else {
         printf("\r\n[ACCESO] RFID desconocido\r\n");
@@ -227,13 +225,11 @@ void mefUpdate(void){
                         if (validarHuella(idStr)){
                             alertaExito();
                             intentosFallidos = 0;
-                            printf("\r\n [MOTOR] Abriendo cerradura...\r\n");
                             if (!OMITIR_MOTOR) {
-                                step_move(ON);
+                                abrirCerradura();
                             } else {
                                 printf("\r\n[OMITIR MOTOR] Simulando apertura de cerradura\r\n");
                             }
-                            printf("\r\n [SISTEMA] Cerradura abierta \r\n");
                             estadoActual = SENSOR_CIERRE;
                             break;
                         } else {
@@ -280,13 +276,11 @@ void mefUpdate(void){
                   }
                   alertaExito();
                   intentosFallidos = 0;
-                  printf("\r\n [MOTOR] Abriendo cerradura...\r\n");
                   if (!OMITIR_MOTOR) {
-                      step_move(ON); //Gira 1 vuelta en sentido antihorario(Abrir)
+                      abrirCerradura();
                   } else {
                       printf("\r\n[OMITIR MOTOR] Simulando apertura de cerradura\r\n");
                   }
-                  printf("\r\n [SISTEMA] Cerradura abierta \r\n");
                   //Esperamos cierre de cerradura antes de volver a REPOSO
                   estadoActual = SENSOR_CIERRE;
             } else {
@@ -308,12 +302,10 @@ void mefUpdate(void){
                     printf("\r\n[OMITIR SENSOR] Simulando deteccion de cierre en 2 segundos...\r\n");
                     if (!OMITIR_MOTOR) {
                         delay(2000);
-                        printf("\r\n [MOTOR] Cerrando cerradura...\r\n");
-                        step_move(OFF);
+                        cerrarCerradura();
                     } else {
                         printf("\r\n[OMITIR MOTOR] Simulando cierre de cerradura\r\n");
                     }                      
-                    printf("\r\n [SISTEMA] Cerradura cerrada \r\n");
                     estadoActual = LEER_PIN;
                     break;
                   }
@@ -324,12 +316,10 @@ void mefUpdate(void){
 		              if(!sensorState){
                         printf("\r\n[SENSOR] Puerta cerrada detectada\r\n");
                         if (!OMITIR_MOTOR) {
-                            printf("\r\n [MOTOR] Cerrando cerradura...\r\n");
-                            step_move(OFF);
+                            cerrarCerradura();
                         } else {
                             printf("\r\n[OMITIR MOTOR] Simulando cierre de cerradura\r\n");
                         }
-                        printf("\r\n [SISTEMA] Cerradura cerrada \r\n");
                         estadoActual = LEER_PIN;
 		              } else {
 		                  printf("\r\n [SENSOR] Esperando cierre de puerta...\r\n");
