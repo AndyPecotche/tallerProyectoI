@@ -44,12 +44,10 @@
 #define AS608_FLUSH_MS_SHORT           5
 #define AS608_FLUSH_MS_TINY            2
 #define AS608_DELAY_BEFORE_SEND_MS     5
-#define AS608_GETIMAGE_TIMEOUT_MS      250
 #define AS608_GETIMAGE_LONG_TIMEOUT_MS 300
 #define AS608_IMAGE2TZ_PRE_DELAY_MS    80
 #define AS608_IMAGE2TZ_TIMEOUT_MS      600
 #define AS608_SEARCH_TIMEOUT_MS        250
-#define AS608_PROBE_TIMEOUT_MS         3000
 #define AS608_CHECK_DELAY_MS           5
 #define AS608_CHECK_TIMEOUT_MS         3000
 #define AS608_TEMPLATECOUNT_TIMEOUT_MS 3000
@@ -105,17 +103,18 @@ static bool as608Send(const uint8_t *data, size_t len){
     for(size_t i=0; i<len; i++){
         uartWriteByte(AS608_UART, data[i]);
     }
-    if(g_as608DebugLevel >= 3){
-        printf("[AS608][TX] ");
-        for(size_t i=0;i<len;i++){
-            printf("%02X", data[i]);
-            if(i+1<len) printf(" ");
-        }
-        printf("\r\n");
-    }
     return true;
 }
-
+static void as608FlushRx(uint32_t ms){
+    uint32_t start = tickRead();
+    uint8_t b;
+    while ((tickRead() - start) < ms){
+        if (!uartReadByte(AS608_UART, &b)){
+            // No data right now, small wait
+            delay(1);
+        }
+    }
+}
 static size_t as608Recv(uint8_t *buf, size_t maxLen, uint32_t timeoutMs){
     uint32_t start = tickRead();
     size_t n = 0;
@@ -126,26 +125,39 @@ static size_t as608Recv(uint8_t *buf, size_t maxLen, uint32_t timeoutMs){
             else break;
         }
     }
-    if(n>0 && g_as608DebugLevel >= 3){
-        printf("[AS608][RX] ");
-        for(size_t i=0;i<n;i++){
-            printf("%02X", buf[i]);
-            if(i+1<n) printf(" ");
-        }
-        printf("\r\n");
-    }
     return n;
 }
-
-static void as608FlushRx(uint32_t ms){
-    uint32_t start = tickRead();
-    uint8_t b;
-    while ((tickRead() - start) < ms){
-        if (!uartReadByte(AS608_UART, &b)){
-            // No data right now, small wait
-            delay(1);
-        }
+/*
+ * as608Check: verifica comunicación con el sensor (función interna)
+ * Envía comando VfyPwd (0x13) con contraseña por defecto 0x00000000
+ */
+static bool as608Check(void){
+    printf("\r\n[AS608][INIT] Verificando comunicación con sensor...\r\n");
+    const uint8_t cmdVfyPwd[] = {
+        0xEF, 0x01,                     // Header
+        0xFF, 0xFF, 0xFF, 0xFF,         // Address
+        0x01,                           // Package identifier
+        0x00, 0x07,                     // Length
+        0x13,                           // Instruction VfyPwd
+        0x00, 0x00, 0x00, 0x00,         // Password
+        0x00, 0x1B                      // Checksum
+    };
+    as608FlushRx(AS608_FLUSH_MS_TINY);
+    as608Send(cmdVfyPwd, sizeof(cmdVfyPwd));
+    delay(AS608_CHECK_DELAY_MS);
+    uint8_t resp[32];
+    size_t n = as608Recv(resp, sizeof(resp), AS608_CHECK_TIMEOUT_MS);
+    
+    if(n < 12 || resp[0] != 0xEF || resp[1] != 0x01 || resp[6] != 0x07){
+        printf("[AS608][CHECK] Respuesta inválida\r\n");
+        return false;
     }
+    if(resp[9] == 0x00){
+        printf("[AS608][CHECK] Sensor responde OK\r\n");
+        return true;
+    }
+    printf("[AS608][CHECK] Código de error: 0x%02X\r\n", resp[9]);
+    return false;
 }
 
 /* Utilidad: construir y enviar paquete según protocolo AS608 */
@@ -182,19 +194,6 @@ static uint8_t as608GetAck(uint8_t *respBuf, size_t respMax, uint32_t timeoutMs)
     return respBuf[9];
 }
 
-/* Comandos básicos */
-static uint8_t as608CmdGetImage(void){
-    uint8_t payload[] = { 0x01 }; // GetImage
-    as608FlushRx(AS608_FLUSH_MS_SHORT);
-    delay(AS608_DELAY_BEFORE_SEND_MS);
-    as608WritePacket(0x01, payload, sizeof(payload));
-    uint8_t resp[32];
-    // Fast empty scan: usar timeout corto (60 ms). Respuestas típicas ~10-20 ms.
-    // Conservador: mayor timeout para asegurar captura del ACK
-    return as608GetAck(resp, sizeof(resp), AS608_GETIMAGE_TIMEOUT_MS);
-}
-
-/* Variante con mayor timeout usada en ENROLL para dar tiempo al sensor */
 static uint8_t as608CmdGetImageLong(void){
     uint8_t payload[] = { 0x01 };
     as608FlushRx(AS608_FLUSH_MS_SHORT);
@@ -459,144 +458,4 @@ void as608Init(uint32_t baudrate){
     as608FlushRx(10);
     bool as608Ok = as608Check();
     printf("\r\n[AS608][INIT] Estado sensor: %s\r\n", as608Ok?"OK":"FALLÓ");
-}
-
-/*
- * as608Check: verifica comunicación con el sensor
- * Envía comando VfyPwd (0x13) con contraseña por defecto 0x00000000
- * Espera ACK con código de confirmación 0x00
- */
-bool as608Check(void){
-    printf("\r\n[AS608][INIT] Verificando comunicación con sensor...\r\n");
-    // Paquete VfyPwd: Header(2) + Addr(4) + PID(1) + Len(2) + Instr(1) + Pwd(4) + Chksum(2)
-    // Ejemplo: EF01 FFFFFFFF 01 0008 13 00000000 001C
-    const uint8_t cmdVfyPwd[] = {
-        0xEF, 0x01,                     // Header
-        0xFF, 0xFF, 0xFF, 0xFF,         // Address (default broadcast)
-        0x01,                           // Package identifier (command)
-        0x00, 0x07,                     // Length (7 bytes: instr + pwd + chksum)
-        0x13,                           // Instruction VfyPwd
-        0x00, 0x00, 0x00, 0x00,         // Password (default 0x00000000)
-        0x00, 0x1B                      // Checksum (0x01+0x00+0x07+0x13+0x00*4 = 0x1B)
-    };
-    // Vaciar RX antes del envío
-    as608FlushRx(AS608_FLUSH_MS_TINY);
-    as608Send(cmdVfyPwd, sizeof(cmdVfyPwd));
-    // Dar tiempo mínimo al módulo a responder
-    delay(AS608_CHECK_DELAY_MS);
-    uint8_t resp[32];
-    size_t n = as608Recv(resp, sizeof(resp), AS608_CHECK_TIMEOUT_MS);
-    
-    if(n < 12){
-        printf("[AS608][CHECK] Respuesta insuficiente (%u bytes)\r\n", (unsigned)n);
-        return false;
-    }
-    
-    // Verificar header EF01
-    if(resp[0] != 0xEF || resp[1] != 0x01){
-        printf("[AS608][CHECK] Header inválido\r\n");
-        return false;
-    }
-    
-    // Verificar ACK package type (0x07)
-    if(resp[6] != 0x07){
-        printf("[AS608][CHECK] No es paquete ACK (tipo=%02X)\r\n", resp[6]);
-        return false;
-    }
-    
-    // Byte 9 es el código de confirmación (0x00 = OK)
-    uint8_t confirmCode = resp[9];
-    if(confirmCode == 0x00){
-        printf("[AS608][CHECK] Sensor responde OK\r\n");
-        return true;
-    } else {
-        printf("[AS608][CHECK] Código de error: 0x%02X\r\n", confirmCode);
-        return false;
-    }
-}
-
-/*
- * grabarHuella: flujo típico (simplificado)
- * 1) Pedir imagen (collect finger)
- * 2) Convertir a características (image2Tz)
- * 3) Crear modelo (regModel)
- * 4) Guardar en índice libre (store)
- * 5) Obtener ID asignado (aquí simulado/extraído si el sensor lo reporta)
- *
- * Esta implementación solo esqueleto: envía comandos placeholders y
- * espera una respuesta que contenga un ID ASCII de 4 chars.
- */
-bool grabarHuella(char idOut[5]){
-    if(!idOut) return false;
-    memset(idOut, 0, 5);
-
-    // Placeholder: comandos binarios reales deben construirse según datasheet AS608/R305.
-    // Por ahora, pedimos al usuario apoyar huella y leemos cualquier respuesta del módulo.
-    printf("\r\n[AS608] Apoye el dedo para registrar...\r\n");
-
-    // Envío de un comando ficticio (por ejemplo, GetImage)
-    const uint8_t cmdGetImage[] = { 0xEF,0x01, 0xFF,0xFF,0xFF,0xFF, 0x01, 0x00,0x03, 0x01, 0x00, 0x05 };
-    as608Send(cmdGetImage, sizeof(cmdGetImage));
-
-    uint8_t resp[64];
-    size_t n = as608Recv(resp, sizeof(resp), 3000);
-    if(n == 0){
-        printf("[AS608] Tiempo de espera sin respuesta\r\n");
-        return false;
-    }
-
-    // Buscar un posible ID ASCII de 4 chars dentro de la respuesta
-    for(size_t i=0; i+4<=n; i++){
-        if(resp[i] >= '0' && resp[i] <= '9'){
-            if(resp[i+1] >= '0' && resp[i+1] <= '9' &&
-               resp[i+2] >= '0' && resp[i+2] <= '9' &&
-               resp[i+3] >= '0' && resp[i+3] <= '9'){
-                memcpy(idOut, &resp[i], 4);
-                idOut[4] = '\0';
-                printf("[AS608] Huella registrada ID=%s\r\n", idOut);
-                return true;
-            }
-        }
-    }
-
-    // Si no se encontró ID, simular uno (para pruebas)
-    strcpy(idOut, "0001");
-    printf("[AS608] Huella registrada (SIMULADA!!!) ID=%s\r\n", idOut);
-    return true;
-}
-
-/* leerHuella: flujo típico de búsqueda
- * 1) Pedir imagen
- * 2) Convertir a características
- * 3) Buscar en base (search)
- * 4) El sensor devuelve posición/ID; extraer y retornar
- */
-bool leerHuella(void){
-    printf("\r\n[AS608] Lectura manual de huella iniciada\r\n");
-    uint32_t start = tickRead();
-    while ((tickRead() - start) < 8000){
-        uint8_t r = as608CmdGetImage();
-        if (r == 0x00){
-            uint8_t tz = as608CmdImage2Tz(0x01);
-            if (tz != 0x00){
-                return false;
-            }
-            uint16_t id=0, score=0;
-            int sr = as608CmdHiSpeedSearch(0x0000, 0x00A3, &id, &score);
-            if (sr == 0){
-                return true;
-            } else if (sr == 0x09 /*NOTFOUND*/ || sr == 0x08 /*NOMATCH*/){
-                return false;
-            } else {
-                return false;
-            }
-        } else if (r == 0x02){
-            // No finger
-            delay(50);
-            continue;
-        } else {
-            delay(100);
-        }
-    }
-    return false;
 }
