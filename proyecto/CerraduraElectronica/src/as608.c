@@ -455,39 +455,6 @@ void as608Init(uint32_t baudrate){
 }
 
 /*
- * Probing utilitario: prueba distintos baudios y comandos para detectar vida.
- * Secuencia: intenta 9600 -> 57600 -> 115200. En cada uno:
- *  - Envia VfyPwd y espera cualquier respuesta (>=1 byte)
- *  - Si ve bytes, reporta baudio y retorna true
- */
-bool as608Probe(void){
-    const uint32_t bauds[] = {9600, 57600, 115200};
-    const size_t nBauds = sizeof(bauds)/sizeof(bauds[0]);
-    for(size_t i=0; i<nBauds; i++){
-        uint32_t br = bauds[i];
-        uartConfig(AS608_UART, br);
-        printf("\r\n[AS608][PROBE] Probando a %u baud...\r\n", (unsigned)br);
-        as608FlushRx(10);
-
-        // Reusar comando VfyPwd
-        const uint8_t cmdVfyPwd[] = {
-            0xEF,0x01, 0xFF,0xFF,0xFF,0xFF, 0x01, 0x00,0x07, 0x13, 0x00,0x00,0x00,0x00, 0x00,0x1B
-        };
-        as608Send(cmdVfyPwd, sizeof(cmdVfyPwd));
-        delay(AS608_DELAY_BEFORE_SEND_MS);
-        uint8_t resp[64];
-        size_t n = as608Recv(resp, sizeof(resp), AS608_PROBE_TIMEOUT_MS);
-        printf("[AS608][PROBE] Bytes recibidos: %u\r\n", (unsigned)n);
-        if(n>0){
-            printf("[AS608][PROBE] Actividad detectada en %u baud\r\n", (unsigned)br);
-            return true;
-        }
-    }
-    printf("[AS608][PROBE] Sin actividad en 9600/57600/115200\r\n");
-    return false;
-}
-
-/*
  * as608Check: verifica comunicación con el sensor
  * Envía comando VfyPwd (0x13) con contraseña por defecto 0x00000000
  * Espera ACK con código de confirmación 0x00

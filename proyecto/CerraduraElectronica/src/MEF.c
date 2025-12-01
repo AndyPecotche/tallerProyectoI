@@ -16,7 +16,7 @@ static EstadoMEF_t estadoActual;
 static char pinIngresado[6];
 static int intentosFallidos = 0;
 
-#define TIMEOUT_MS     10000  // N segundos para ingresar PIN
+#define TIMEOUT_MS     20000  // N segundos para ingresar PIN
 
 #define OMITIR_SENSOR_CIERRE 1 // 1 = omitir chequeo de sensor de cierre (para pruebas)
 #define OMITIR_MOTOR 1         // 1 = omitir control de motor (para pruebas)
@@ -154,18 +154,7 @@ void mefInit(void){
     configurarInterrupcionPRESENCIA();
     configurarInterrupcionRFID();
     as608Init(0);
-    // Activar nivel de debug para fingerprint (1 = básico, 2 = detallado)
-    as608SetDebug(1);
-    // Probar actividad del sensor y ajustar baudio si corresponde
-    if (as608Probe()){
-        printf("\r\n[AS608][PROBE] Sensor activo en alguno de los baudios\r\n");
-    } else {
-        printf("\r\n[AS608][PROBE] Sin actividad en 9600/57600/115200\r\n");
-    }
-    // Re-verificar handshake tras el probe en el baudio actual antes de empezar a usar GetImage
-    if (!as608Check()){
-        printf("\r\n[AS608][INIT] VfyPwd falló tras probe; reintentando más tarde\r\n");
-    }
+    as608SetDebug(1);// Activar nivel de debug para fingerprint (1 = básico, 2 = detallado)
     //sincronizarConServidor();
     // Configurar GPIO0[1] como entrada para el sensor de cierre
     // Pin físico P0_1 mapeado a GPIO0[1] como entrada con buffer habilitado
@@ -230,7 +219,7 @@ void mefUpdate(void){
             // Poll huella con intervalo para no saturar UART
             {
                 static uint32_t ultimoIntentoHuella = 0;
-                const uint32_t INTERVALO_HUELLA_MS = 20; // escaneo huella cada 1000ms para menor carga UART
+                const uint32_t INTERVALO_HUELLA_MS = 1000; // escaneo huella cada 1000ms para menor carga UART
                 if (tickRead() - ultimoIntentoHuella >= INTERVALO_HUELLA_MS){
                     ultimoIntentoHuella = tickRead();
                     uint16_t id=0, score=0;
