@@ -11,7 +11,9 @@
    Base de datos local de usuarios
 --------------------------------------------------------------------------- */
 PinUsuario_t listaPins[MAX_PINS] = {
-    { "11111", true, "", "", "master" }  // PIN maestro
+    { "11111", true, "", "", "master" },  // PIN maestro
+    { "12345", true, "9876543210FF", "0001", "juan" },
+    { "23456", true, "1234567890AB", "0002", "pedro" }
 };
 
 /* ---------------------------------------------------------------------------
@@ -118,6 +120,41 @@ const char* obtenerTagPorRFID(const char *rfid) {
         }
     }
     return NULL;
+}
+
+/* ---------------------------------------------------------------------------
+   Obtener el tag asociado a una huella registrada
+   - huellaId es el string de 4 dígitos ("0001", etc.)
+   - Devuelve puntero al tag si existe y está activo
+   - Devuelve "usuario" si no hay tag pero huella coincide
+   - Devuelve NULL si la huella no está asociada
+--------------------------------------------------------------------------- */
+const char* obtenerTagPorHuella(const char *huellaId) {
+    if(!huellaId) return NULL;
+    for (int i = 0; i < MAX_PINS; i++) {
+        if (listaPins[i].activo && strlen(listaPins[i].huella) > 0 && strcmp(listaPins[i].huella, huellaId) == 0) {
+            if (strlen(listaPins[i].tag) > 0) {
+                return listaPins[i].tag;
+            }
+            return "usuario";
+        }
+    }
+    return NULL;
+}
+
+/* ---------------------------------------------------------------------------
+   Validar huella (ID string) y logear bienvenida centralizada
+--------------------------------------------------------------------------- */
+bool validarHuella(const char *huellaId){
+    if(!huellaId) return false;
+    for (int i = 0; i < MAX_PINS; i++) {
+        if (listaPins[i].activo && strlen(listaPins[i].huella) > 0 && strcmp(listaPins[i].huella, huellaId) == 0) {
+            const char *tag = (strlen(listaPins[i].tag) > 0)? listaPins[i].tag : "usuario";
+            printf("\r\n[ACCESO] Huella ID=%s - Bienvenido, %s\r\n", huellaId, tag);
+            return true;
+        }
+    }
+    return false;
 }
 
 bool sincronizarConServidor(void) {

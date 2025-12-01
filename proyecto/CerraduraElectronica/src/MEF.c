@@ -4,6 +4,7 @@
 #include "validacion.h"
 #include "alertas.h"
 #include "espAT.h"
+#include "as608.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
@@ -15,8 +16,7 @@ static EstadoMEF_t estadoActual;
 static char pinIngresado[6];
 static int intentosFallidos = 0;
 
-#define MAX_INTENTOS   99
-#define TIMEOUT_MS     5000  // 20 segundos para ingresar PIN
+#define TIMEOUT_MS     60000  // 30 segundos para ingresar PIN
 
 #define OMITIR_SENSOR_CIERRE 1 // 1 = omitir chequeo de sensor de cierre (para pruebas)
 #define OMITIR_MOTOR 1         // 1 = omitir control de motor (para pruebas)
@@ -150,24 +150,31 @@ void mefInit(void){
     boardConfig();
     tecladoInit();
     alertasInit();
-    espATInit(115200);
-    printf("\r\n[ESP][INIT] Inicializando ESP (AT/BLUFI) ...\r\n");
-    bool atOk = inicializarESP(8000);
-    printf("\r\n[ESP][INIT] Resultado AT: %s\r\n", atOk?"OK":"FALLÓ");
-    printf("\r\n[ESP][INIT] Esperando 'WIFI GOT IP'...\r\n");
-    bool ipOk = espWaitWifiGotIP(120000);
-    printf("\r\n[ESP][INIT] Estado WiFi: %s\r\n", ipOk?"GOT IP":"TIMEOUT");
+    //espATInit(115200);
     configurarInterrupcionPRESENCIA();
     configurarInterrupcionRFID();
-
+    as608Init(0);
+    // Activar nivel de debug para fingerprint (1 = básico, 2 = detallado)
+    as608SetDebug(1);
+    // Probar actividad del sensor y ajustar baudio si corresponde
+    if (as608Probe()){
+        printf("\r\n[AS608][PROBE] Sensor activo en alguno de los baudios\r\n");
+    } else {
+        printf("\r\n[AS608][PROBE] Sin actividad en 9600/57600/115200\r\n");
+    }
+    // Re-verificar handshake tras el probe en el baudio actual antes de empezar a usar GetImage
+    if (!as608Check()){
+        printf("\r\n[AS608][INIT] VfyPwd falló tras probe; reintentando más tarde\r\n");
+    }
+    //sincronizarConServidor();
     // Configurar GPIO0[1] como entrada para el sensor de cierre
     // Pin físico P0_1 mapeado a GPIO0[1] como entrada con buffer habilitado
     Chip_SCU_PinMux(0, 1, SCU_MODE_INACT | SCU_MODE_INBUFF_EN | SCU_MODE_ZIF_DIS, FUNC0);
     Chip_GPIO_SetPinDIRInput(LPC_GPIO_PORT, SENSOR_GPIO_PORT, SENSOR_GPIO_PIN);
 
-    estadoActual = REPOSO;
-    intentosFallidos = 0;
+    estadoActual = LEER_PIN;
     printf("\r\n[SISTEMA] Cerradura electrónica iniciada.\r\n");
+    //leerHuella(); // Prueba inicial de huella (deshabilitada para evitar spam)
 }
 
 /* ---------------------------------------------------------------------------
@@ -219,6 +226,36 @@ void mefUpdate(void){
                 estadoPrevio = LEER_PIN;
                 estadoActual = LEER_RFID;
                 break;
+            }
+            // Poll huella con intervalo para no saturar UART
+            {
+                static uint32_t ultimoIntentoHuella = 0;
+                const uint32_t INTERVALO_HUELLA_MS = 1000; // escaneo huella cada 1000ms para menor carga UART
+                if (tickRead() - ultimoIntentoHuella >= INTERVALO_HUELLA_MS){
+                    ultimoIntentoHuella = tickRead();
+                    uint16_t id=0, score=0;
+                    if (as608PollHuella(&id, &score)){
+                        char idStr[5];
+                        snprintf(idStr, sizeof(idStr), "%04u", (unsigned)id);
+                        printf("\r\n[HUELLA] Dedo detectado (ID bruto=%s score=%u)\r\n", idStr, (unsigned)score);
+                        // Centraliza mensaje de bienvenida en validacion
+                        if (validarHuella(idStr)){
+                            alertaExito();
+                            intentosFallidos = 0;
+                            printf("\r\n [MOTOR] Abriendo cerradura...\r\n");
+                            if (!OMITIR_MOTOR) {
+                                step_move(ON);
+                            } else {
+                                printf("\r\n[OMITIR MOTOR] Simulando apertura de cerradura\r\n");
+                            }
+                            printf("\r\n [SISTEMA] Cerradura abierta \r\n");
+                            estadoActual = SENSOR_CIERRE;
+                            break;
+                        } else {
+                            printf("\r\n[ACCESO] Huella no registrada (ID=%s)\r\n", idStr);
+                        }
+                    }
+                }
             }
             // Teclado: si completa 5 dígitos, validar
             // tecladoLeerPin internamente resetea el timeout en cada tecla
@@ -317,7 +354,7 @@ void mefUpdate(void){
             break;
             
          case MENU_ADMIN:
-            printf("\r\n[ADMIN] OPCIONES: 1 = Nuevo RFID | 2 = Nueva huella\r\n");
+                printf("\r\n[ADMIN] OPCIONES: 1=RFID | 2=Registrar huella | 3=Reset WiFi | 4=Leer huella\r\n");
             char opcion = 0;
 
             while (!opcion) {
@@ -335,12 +372,31 @@ void mefUpdate(void){
                 case '2':
                     estadoActual = REGISTRAR_HUELLA;
                     break;
+                case '3':
+                    printf("\r\n[ADMIN] Resetear credenciales WiFi...\r\n");
+                    if(resetearCredencialesESP()){
+                        printf("\r\n[ADMIN] Esperando reconexión ESP...\r\n");
+                        // Esperar que el ESP se reinicie
+                        delay(3000);
+                        // Reinicializar comunicación
+                        inicializarESP(60000);
+                        printf("\r\n[ADMIN] Use la app ESP BluFi para configurar WiFi\r\n");
+                    } else {
+                        printf("\r\n[ADMIN] Error al resetear ESP\r\n");
+                    }
+                    estadoActual = LEER_PIN;
+                    break;
+                case '4':
+                    printf("\r\n[ADMIN] Lectura huella se realiza en paralelo al PIN\r\n");
+                    estadoActual = LEER_PIN;
+                    break;
                 default:
                     printf("\r\n[ADMIN] Opción inválida\r\n");
                     estadoActual = LEER_PIN;
                     break;
             }
          break;
+        // Se elimina LEER_HUELLA como estado separado; se integra polling en LEER_PIN
 
         case REGISTRAR_RFID: {
             printf("\r\n[ADMIN] Registrar nuevo RFID\r\n");
@@ -387,11 +443,17 @@ void mefUpdate(void){
             }
 
             if (validarPin(pinValidado)) {
-                printf("\r\nApoye la huella en el lector (simulado)\r\n");
-               // char nuevaHuella[20];
-               // scanf("%s", nuevaHuella); // simulado desde consola UART
-               // asociarHuellaaPin(pinValidado, nuevaHuella);
-                printf("\r\nHUELLA GUARDADO\r\n");
+                printf("\r\n[ADMIN] Iniciando ENROLL de huella para PIN %s\r\n", pinValidado);
+                char idHuella[5] = {0};
+                if (as608Enroll(idHuella)) {
+                    if (asociarHuellaaPin(pinValidado, idHuella)) {
+                        printf("\r\n[ADMIN] Huella asociada al PIN %s (ID=%s)\r\n", pinValidado, idHuella);
+                    } else {
+                        printf("\r\n[ERROR] No se pudo asociar la huella al PIN\r\n");
+                    }
+                } else {
+                    printf("\r\n[ERROR] Falló el ENROLL de la huella\r\n");
+                }
             } else {
                 printf("\r\n[ERROR] PIN inválido\r\n");
             }
