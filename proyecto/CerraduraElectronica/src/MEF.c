@@ -27,35 +27,25 @@ volatile bool eventoPresencia = false;   // Presencia detectada (GPIO0[12] o TEC
 volatile bool eventoRFID = false;        // Pulso de RFID (GPIO2[5] o TEC2)
 
 /* ---------------------------------------------------------------------------
-   Modo de bajo consumo profundo
+   Modo de bajo consumo
 --------------------------------------------------------------------------- */
 static void entrarModoSleep(void){
-    static bool yaEnSleep = false;
+    printf("\r\n[SLEEP] Entrando en modo de bajo consumo...\r\n");
+    delay(100); // Dar tiempo a que se transmita el mensaje
     
-    if(!yaEnSleep){
-        printf("\r\n[SLEEP] Entrando en modo de bajo consumo...\r\n");
-        printf("[SLEEP] Estado eventos - Presencia:%d RFID:%d\r\n", eventoPresencia, eventoRFID);
-        delay(100); // Dar tiempo a que se transmita el mensaje
-        
-        // Deshabilitar SysTick para evitar despertares constantes (ahorro real de energía)
-        SysTick->CTRL &= ~SysTick_CTRL_TICKINT_Msk;
-        
-        yaEnSleep = true;
-    }
+    // Deshabilitar SysTick para evitar despertares constantes (ahorro real de energía)
+    SysTick->CTRL &= ~SysTick_CTRL_TICKINT_Msk;
     
     // Usar sleep mode NORMAL (no deep) para mantener clocks de GPIO/PININT activos
     SCB->SCR &= ~SCB_SCR_SLEEPDEEP_Msk;
     
-    __WFI(); // Wait For Interrupt - ahora solo despierta con GPIO (presencia/RFID)
-    printf("\r\n[SLEEP] Despertando de modo de bajo consumo...\r\n");
-    // Verificar inmediatamente si hay eventos GPIO
-    if(eventoPresencia || eventoRFID){
-        // Rehabilitar SysTick al despertar
-        SysTick->CTRL |= SysTick_CTRL_TICKINT_Msk;
-        
-        printf("\r\n[SLEEP] Despertado - Presencia:%d RFID:%d\r\n", eventoPresencia, eventoRFID);
-        yaEnSleep = false;
-    }
+    __WFI(); // Wait For Interrupt - despierta con GPIO (presencia/RFID)
+    
+    // Rehabilitar SysTick al despertar
+    SysTick->CTRL |= SysTick_CTRL_TICKINT_Msk;
+    
+    printf("\r\n[SLEEP] Despertando...\r\n");
+    sincronizarConServidor(); // Sincronizar al despertar
 }
 
 /* Canal 0: Presencia (vector nombrado como GPIO0_IRQHandler en este BSP) */
@@ -72,12 +62,6 @@ void GPIO1_IRQHandler(void){
     printf("\r\n[INTERRUPCIÓN] RFID detectado\r\n");
 }
 /* ---------------------------------------------------------------------------
-   Configuración de interrupción en TEC1
---------------------------------------------------------------------------- */
-
-/* Configuración movida a mef_config.{h,c} */
-
-/* ---------------------------------------------------------------------------
    Inicialización de la MEF
 --------------------------------------------------------------------------- */
 void mefInit(void){
@@ -87,13 +71,11 @@ void mefInit(void){
     if (ALERTAS_ENABLE) alertasInit();
     if (SENSOR_WIFI_ENABLE) { espATInit(115200); sincronizarConServidor(); }
     if (SENSOR_HUELLA_ENABLE) {as608Init(0); as608SetDebug(1); as608ScanReset();}
-    // Nivel de debug fingerprint (1=básico, 2=detallado) // Preparar mini MEF del AS608
+                        // Nivel de debug fingerprint (1=básico, 2=detallado) // Preparar mini MEF del AS608
     configurarInterrupcionPRESENCIA();
     configurarInterrupcionRFID();
-
-
-    estadoActual = LEER_PIN;
     printf("\r\n[SISTEMA] Cerradura electrónica iniciada.\r\n");
+    estadoActual = ESPERANDO_ACCION;
 }
 
 /* ---------------------------------------------------------------------------
@@ -101,35 +83,18 @@ void mefInit(void){
 --------------------------------------------------------------------------- */
 void mefUpdate(void){
     //printf("\r . \r\n");
-    static uint32_t tiempoInicio = 0;
     static uint32_t ultimaPresencia = 0;
 
     switch(estadoActual){
 
         case REPOSO:
-            if(eventoPresencia || eventoRFID){
-                if (eventoRFID){
-                    eventoRFID = false;
-                    estadoActual = LEER_RFID;
-                    break;
-                }
-                printf("\r\n[EVENTO] Presencia detectada\r\n");
-                printf("\r\n[DEBUG] Llamando sincronizarConServidor()\r\n");
-                bool okSync = sincronizarConServidor();
-                printf("\r\n[DEBUG] Resultado sincronización: %s\r\n", okSync?"OK":"FALLÓ");
-                eventoPresencia = false;
-                tecladoReset();
-                tiempoInicio = tickRead();
-                ultimaPresencia = tiempoInicio;
-                printf("\r\n[EVENTO] Ingrese PIN de 5 dígitos o '*' para menú\r\n");
-                estadoActual = LEER_PIN;
-            } else {
-                // Solo dormir si no hay eventos pendientes
-                entrarModoSleep();
-            }
+            // Dormir esperando eventos GPIO (presencia/RFID)
+            entrarModoSleep();
+            // Al despertar, ir a ESPERANDO_ACCION que maneja los eventos
+            estadoActual = ESPERANDO_ACCION;
             break;
 
-        case LEER_PIN:
+        case ESPERANDO_ACCION:
             // Refresh timeout on presence pulses
             if (eventoPresencia){
                 eventoPresencia = false;
@@ -146,7 +111,7 @@ void mefUpdate(void){
             {
                 static uint32_t agendaHuella = 0;
                 static bool escaneoActivo = false;
-                const uint32_t INTERVALO_HUELLA_MS = 600; // agenda de intentos
+                const uint32_t INTERVALO_HUELLA_MS = 600;
 
                 // Programar inicio de escaneo cada cierto intervalo
                 if (!escaneoActivo && (tickRead() - agendaHuella) >= INTERVALO_HUELLA_MS){
@@ -159,10 +124,8 @@ void mefUpdate(void){
                     uint16_t id=0, score=0;
                     as608ScanStatus_t st = as608ScanStep(&id, &score);
                     if (st == AS608_SCAN_MATCH){
-                        printf("\r\n[DEBUG MEF] as608ScanStep retornó MATCH: id=%u score=%u\r\n", (unsigned)id, (unsigned)score);
                         char idStr[5];
                         snprintf(idStr, sizeof(idStr), "%04u", (unsigned)id);
-                        printf("\r\n[HUELLA] Dedo detectado (ID bruto=%s score=%u)\r\n", idStr, (unsigned)score);
                         if (validarHuella(idStr)){
                             alertaExito();
                             intentosFallidos = 0;
@@ -180,8 +143,6 @@ void mefUpdate(void){
                         }
                     } else if (st == AS608_SCAN_NOMATCH || st == AS608_SCAN_ERROR){
                         escaneoActivo = false; // liberar hasta el próximo intento programado
-                    } else {
-                        // INPROGRESS/IDLE: seguir avanzando en próximos ciclos
                     }
                 }
             }
@@ -194,9 +155,9 @@ void mefUpdate(void){
             } else if (resultado == -1){
                 // Tecla '*' presionada, ir a menú
                 estadoActual = MENU_ADMIN;
-            } else if (tickRead() - ultimaPresencia > TIMEOUT_MS){
+                } else if (tickRead() - ultimaPresencia > TIMEOUT_MS){
                 printf("\r\n[TIMEOUT] Sin actividad por %d ms, durmiendo\r\n", TIMEOUT_MS);
-                estadoActual = REPOSO;
+                    estadoActual = REPOSO;
             }
             break;
 
@@ -231,7 +192,7 @@ void mefUpdate(void){
                 break;
             }
             // Si no validó, retomamos el flujo anterior
-            estadoActual = LEER_PIN;
+                estadoActual = ESPERANDO_ACCION;
             break;
          
         case VALIDAR:
@@ -256,9 +217,8 @@ void mefUpdate(void){
                intentosFallidos++;
                //printf("\r\n[ACCESO] DENEGADO (%d/%d)\r\n",intentosFallidos, MAX_INTENTOS);
                printf("\r\n[ACCESO] INCORRECTO \r\n");
-               tiempoInicio = tickRead();
-                tecladoReset();
-                estadoActual = LEER_PIN;
+               tecladoReset();
+               estadoActual = ESPERANDO_ACCION;
             }
             break;
    
@@ -274,7 +234,7 @@ void mefUpdate(void){
                     } else {
                         printf("\r\n[OMITIR MOTOR] Simulando cierre de cerradura\r\n");
                     }                      
-                    estadoActual = LEER_PIN;
+                        estadoActual = ESPERANDO_ACCION;
                     break;
                   }
 		          {
@@ -288,7 +248,7 @@ void mefUpdate(void){
                         } else {
                             printf("\r\n[OMITIR MOTOR] Simulando cierre de cerradura\r\n");
                         }
-                        estadoActual = LEER_PIN;
+                            estadoActual = ESPERANDO_ACCION;
 		              } else {
 		                  printf("\r\n [SENSOR] Esperando cierre de puerta...\r\n");
 		              }
@@ -327,7 +287,7 @@ void mefUpdate(void){
                     } else {
                         printf("\r\n[ADMIN] Error al resetear ESP\r\n");
                     }
-                    estadoActual = LEER_PIN;
+                    estadoActual = ESPERANDO_ACCION;
                     break;
                     case '4':
                         printf("\r\n[ADMIN] Limpiando todas las huellas del sensor...\r\n");
@@ -336,11 +296,11 @@ void mefUpdate(void){
                         } else {
                             printf("\r\n[ADMIN] Error al borrar huellas del sensor\r\n");
                         }
-                        estadoActual = LEER_PIN;
+                        estadoActual = ESPERANDO_ACCION;
                         break;
                 default:
                     printf("\r\n[ADMIN] Opción inválida\r\n");
-                    estadoActual = LEER_PIN;
+                    estadoActual = ESPERANDO_ACCION;
                     break;
             }
          break;
@@ -372,7 +332,7 @@ void mefUpdate(void){
                 printf("\r\n[ERROR] PIN inválido\r\n");
             }
 
-            estadoActual = LEER_PIN;
+            estadoActual = ESPERANDO_ACCION;
             break;
         }
 
@@ -441,7 +401,7 @@ void mefUpdate(void){
                 printf("\r\n[ERROR] PIN inválido\r\n");
             }
 
-            estadoActual = LEER_PIN;
+            estadoActual = ESPERANDO_ACCION;
             break;
         }
     }
