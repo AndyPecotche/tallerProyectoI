@@ -67,6 +67,11 @@ static void as608FlushRx(uint32_t ms){
         uartReadByte(AS608_UART, &b); // Descartar bytes si hay
     }
 }
+/* Helper pequeño para mejorar legibilidad: flush seguido de delay */
+static void as608FlushAndDelay(uint32_t flushMs, uint32_t delayMs){
+    as608FlushRx(flushMs);
+    if(delayMs) delay(delayMs);
+}
 static size_t as608Recv(uint8_t *buf, size_t maxLen, uint32_t timeoutMs){
     uint32_t start = tickRead();
     size_t n = 0;
@@ -264,8 +269,7 @@ bool as608ClearAllTemplates(void){
 /* Helper: ciclo de captura y conversión Image2Tz para ENROLL */
 static bool as608EnrollCapture(uint8_t slot, int pasoIndex){
     // Flush agresivo inicial para limpiar cualquier estado residual
-    as608FlushRx(50);
-    delay(100);
+    as608FlushAndDelay(50, 100);
 
     uint32_t start = tickRead();
     uint32_t lastAttempt = 0;
@@ -281,8 +285,7 @@ static bool as608EnrollCapture(uint8_t slot, int pasoIndex){
         lastAttempt = tickRead();
 
         // Flush antes de cada intento para evitar datos viejos
-        as608FlushRx(10);
-        delay(50);
+        as608FlushAndDelay(10, 50);
 
         uint8_t r = as608CmdGetImageLong();
         tries++;
@@ -290,8 +293,7 @@ static bool as608EnrollCapture(uint8_t slot, int pasoIndex){
         if(r == 0x00){
             printf("[AS608][ENROLL] Imagen %d capturada (intento %d)\r\n", pasoIndex, tries);
             // Flush y delay más largos antes de conversión
-            as608FlushRx(20);
-            delay(200);
+            as608FlushAndDelay(20, 200);
             uint8_t tz = as608CmdImage2Tz(slot);
             if(tz != 0x00){
                 printf("[AS608][ENROLL] Error Image2Tz(%d) code=0x%02X\r\n", pasoIndex, tz);
@@ -324,8 +326,7 @@ bool as608EnrollAtId(uint16_t idTarget, char idOut[5]){
     
     // Preparación del sensor
     printf("\r\n[AS608][ENROLL@ID] Preparando sensor...\r\n");
-    as608FlushRx(100);
-    delay(200);
+    as608FlushAndDelay(100, 200);
     
     printf("[AS608][ENROLL@ID] Paso 1: Coloque dedo (imágen 1)\r\n");
     delay(2000);

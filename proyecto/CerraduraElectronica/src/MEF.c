@@ -461,7 +461,7 @@ void mefUpdate(void){
                     // Obtener ID objetivo desde base de usuarios
                     char idObjetivoStr[5] = {0};
                     if(!obtenerHuellaAsignadaPorPin(pinValidado, idObjetivoStr)){
-                        printf("\r\n[ERROR] No se encontró el PIN para obtener ID de huella\r\n");
+                        printf("\r\n[ERROR] El PIN no tiene ID de huella asignado; asigne uno en el servidor/app\r\n");
                         finalizar = true;
                         break;
                     }
