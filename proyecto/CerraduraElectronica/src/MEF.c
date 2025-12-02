@@ -5,6 +5,7 @@
 #include "alertas.h"
 #include "espAT.h"
 #include "as608.h"
+#include "mef_config.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
@@ -15,20 +16,6 @@
 static EstadoMEF_t estadoActual;
 static char pinIngresado[6];
 static int intentosFallidos = 0;
-
-#define TIMEOUT_MS     20000  // N segundos para ingresar PIN
-
-#define OMITIR_SENSOR_CIERRE 1 // 1 = omitir chequeo de sensor de cierre (para pruebas)
-#define OMITIR_MOTOR 1         // 1 = omitir control de motor (para pruebas)
-#define SIMULAR_RFID_INTERRUPT 0 // 1 = simular interrupción de RFID con TEC2
-#define SIMULAR_PRESENCIA_INTERRUPT 0 // 0 = usar MDIO (P1_17 -> GPIO0[12]) para presencia
-#define ALERTAS_ENABLE 1        // 1 = habilitar alertas sonoras/LED
-#define SENSOR_WIFI_ENABLE 0    // 1 = habilitar módulo WiFi ESP AT
-#define SENSOR_HUELLA_ENABLE 1  // 1 = habilitar módulo de huella
-
-// Configuración del sensor de cierre en GPIO0[1]
-#define SENSORHALL_GPIO_PORT 0
-#define SENSORHALL_GPIO_PIN  1
 
 bool_t open = false;
 
@@ -88,78 +75,7 @@ void GPIO1_IRQHandler(void){
    Configuración de interrupción en TEC1
 --------------------------------------------------------------------------- */
 
-static void configurarPines(void){
-    // Configurar GPIO0[1] como entrada para el sensor de cierre
-    // Pin físico P0_1 mapeado en func0 como GPIO0[1] como entrada con buffer habilitado
-    Chip_SCU_PinMux(0, 1, SCU_MODE_INACT | SCU_MODE_INBUFF_EN | SCU_MODE_ZIF_DIS, FUNC0);
-    Chip_GPIO_SetPinDIRInput(LPC_GPIO_PORT, SENSORHALL_GPIO_PORT, SENSORHALL_GPIO_PIN);
-}
-
-static void configurarInterrupcionPRESENCIA(void){
-
-    Chip_PININT_Init(LPC_GPIO_PIN_INT);
-    if (SIMULAR_PRESENCIA_INTERRUPT) {
-        Chip_SCU_GPIOIntPinSel(0, 0, 4); // TEC1 -> GPIO0[4]
-    } else {
-        // Configurar pin P1_17 como GPIO0[12] para entrada de interrupcion por presencia
-        // Usar pull-down: línea en bajo en reposo, activa en alto
-        Chip_SCU_PinMux(1, 17, SCU_MODE_PULLDOWN | SCU_MODE_INBUFF_EN | SCU_MODE_ZIF_DIS, FUNC0);
-        Chip_GPIO_SetPinDIRInput(LPC_GPIO_PORT, 0, 12);
-        Chip_SCU_GPIOIntPinSel(0, 0, 12); // PRESENCIA -> GPIO0[12] (MDIO en P1_17 como GPIO)
-    }
-    Chip_PININT_ClearIntStatus(LPC_GPIO_PIN_INT, PININTCH0);
-    Chip_PININT_SetPinModeEdge(LPC_GPIO_PIN_INT, PININTCH0);
-    // Señal activa en alto: generar evento en flanco ascendente
-    Chip_PININT_EnableIntHigh(LPC_GPIO_PIN_INT, PININTCH0);
-    NVIC_ClearPendingIRQ(PIN_INT0_IRQn);
-    NVIC_EnableIRQ(PIN_INT0_IRQn);
-}
-
-static void configurarInterrupcionRFID(void){
-
-    Chip_PININT_Init(LPC_GPIO_PIN_INT);
-    if (SIMULAR_RFID_INTERRUPT) {
-        Chip_SCU_GPIOIntPinSel(1, 0, 8); // Canal 1: TEC2 -> GPIO0[8]
-    } else {
-        //Configurar P4_5 en func0 como GPIO2[5] entrada para RFID para interrupcion
-        Chip_SCU_PinMux(4, 5, SCU_MODE_INACT | SCU_MODE_INBUFF_EN | SCU_MODE_ZIF_DIS, FUNC0);
-        Chip_GPIO_SetPinDIRInput(LPC_GPIO_PORT, 2, 5);
-        Chip_SCU_GPIOIntPinSel(1, 2, 5); // Canal 1: RFID -> GPIO2[5]
-    }
-    Chip_PININT_ClearIntStatus(LPC_GPIO_PIN_INT, PININTCH1);
-    Chip_PININT_SetPinModeEdge(LPC_GPIO_PIN_INT, PININTCH1);
-    Chip_PININT_EnableIntLow(LPC_GPIO_PIN_INT, PININTCH1);
-    NVIC_ClearPendingIRQ(PIN_INT1_IRQn);
-    NVIC_EnableIRQ(PIN_INT1_IRQn);
-}
-
-/* ---------------------------------------------------------------------------
-   Simulación lectura RFID por SPI
---------------------------------------------------------------------------- */
-static void leerRFID(void){
-    printf("\r\n[RFID] leyendo RFID por SPI...\r\n");
-    const char *codigoRFIDSimulado = "9876543210FF"; // Simulación
-    if (validarRFID(codigoRFIDSimulado)){
-        const char *tag = obtenerTagPorRFID(codigoRFIDSimulado);
-        if (tag) {
-            printf("\r\n[ACCESO] RFID válido - Bienvenido, %s\r\n", tag);
-        } else {
-            printf("\r\n[ACCESO] RFID válido\r\n");
-        }
-        alertaExito();
-        intentosFallidos = 0;
-        if (!OMITIR_MOTOR) {
-            abrirCerradura();
-        } else {
-            printf("\r\n[OMITIR MOTOR] Simulando apertura de cerradura\r\n");
-        }
-        estadoActual = SENSOR_CIERRE;
-    } else {
-        printf("\r\n[ACCESO] RFID desconocido\r\n");
-        alertaError();
-        intentosFallidos++;
-    }
-}
+/* Configuración movida a mef_config.{h,c} */
 
 /* ---------------------------------------------------------------------------
    Inicialización de la MEF
@@ -288,7 +204,28 @@ void mefUpdate(void){
             // Lógica de lectura/validación RFID en un estado dedicado
             // Reiniciar timeout al procesar RFID
             ultimaPresencia = tickRead();
-            leerRFID();
+            printf("\r\n[RFID] leyendo RFID por SPI...\r\n");
+            const char *codigoRFIDSimulado = "9876543210FF"; // Simulación
+            if (validarRFID(codigoRFIDSimulado)){
+                const char *tag = obtenerTagPorRFID(codigoRFIDSimulado);
+                if (tag) {
+                    printf("\r\n[ACCESO] RFID válido - Bienvenido, %s\r\n", tag);
+                } else {
+                    printf("\r\n[ACCESO] RFID válido\r\n");
+                }
+                alertaExito();
+                intentosFallidos = 0;
+                if (!OMITIR_MOTOR) {
+                    abrirCerradura();
+                } else {
+                    printf("\r\n[OMITIR MOTOR] Simulando apertura de cerradura\r\n");
+                }
+                estadoActual = SENSOR_CIERRE;
+            } else {
+                printf("\r\n[ACCESO] RFID desconocido\r\n");
+                alertaError();
+                intentosFallidos++;
+            }
             // Si la lectura otorgó acceso, leerRFID cambió el estado a SENSOR_CIERRE
             if (estadoActual == SENSOR_CIERRE) {
                 break;
