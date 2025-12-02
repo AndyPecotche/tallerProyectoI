@@ -8,7 +8,7 @@
 --------------------------------------------------------------------------- */
 typedef enum {
    REPOSO,
-   LEER_PIN,
+   ESPERANDO_ACCION,
    LEER_RFID,
    VALIDAR,
    SENSOR_CIERRE,

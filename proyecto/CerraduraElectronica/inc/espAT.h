@@ -12,7 +12,7 @@ typedef struct {
     char codigo[PIN_LENGTH + 1];
     bool activo;
     char rfid[20];
-    char huella[4];
+    char huella[5];  // 4 dígitos + null terminator
     char tag[20];
 } PinUsuario_t;
 
@@ -41,7 +41,7 @@ bool espATCheck(uint32_t timeoutMs);
  * Devuelve cantidad de usuarios parseados exitosamente.
  */
 size_t espHTTPGetPins(const char *url, PinUsuario_t *pinsOut, size_t maxPins, uint32_t timeoutMs);
-bool espWaitWifiGotIP(uint32_t timeoutMs);
 bool inicializarESP(uint32_t timeoutMs);
+bool resetearCredencialesESP(void);
 
 #endif /* ESPAT_H_ */

@@ -12,54 +12,12 @@ void espATInit(uint32_t baudrate){
     }
     printf("\r\n[ESP] Init UART idx=%d baud=%u\r\n", (int)ESP_UART, (unsigned)baudrate);
     uartConfig(ESP_UART, baudrate);
+    printf("\r\n[ESP][INIT] Inicializando ESP (auto-connect/BluFi)...\r\n");
+    bool wifiInitOk = inicializarESP(8000);
 }
 
-// Captura e imprime todo del ESP hasta ver "WIFI GOT IP" o timeout
-bool espWaitWifiGotIP(uint32_t timeoutMs){
-    uint32_t start = tickRead();
-    char window[64];
-    size_t wpos = 0;
-    uint8_t b;
-    printf("\r\n[ESP][BOOT] Esperando WIFI GOT IP...\r\n");
-    while ((tickRead() - start) < timeoutMs){
-        if (uartReadByte(ESP_UART, &b)){
-            char c = (char)b;
-            // imprimir en vivo
-            if (c >= 32 && c <= 126){
-                printf("%c", c);
-            } else if (c == '\r') {
-                printf("<CR>");
-            } else if (c == '\n') {
-                printf("\r\n");
-            }
-            // acumular en ventana circular simple
-            if (wpos < sizeof(window)-1){
-                window[wpos++] = c;
-                window[wpos] = '\0';
-            } else {
-                // desplazamiento simple si se llena
-                memmove(window, window+1, sizeof(window)-2);
-                window[sizeof(window)-2] = c;
-                window[sizeof(window)-1] = '\0';
-            }
-            // chequeo de substring
-            if (strstr(window, "WIFI GOT IP") != NULL){
-                printf("\r\n[ESP][BOOT] WIFI GOT IP detectado\r\n");
-                return true;
-            }
-        }
-    }
-    printf("\r\n[ESP][BOOT] Timeout esperando WIFI GOT IP\r\n");
-    return false;
-}
-
-// Chequeo básico: envía "AT" y espera "OK" en la respuesta.
-bool espATCheck(uint32_t timeoutMs){
-    // Nuevo comportamiento: solo espera WIFI GOT IP
-    return espWaitWifiGotIP(timeoutMs);
-}
-
-// Inicializa el ESP: AT handshake, set BLUFI name y habilitar BLUFI
+// Inicializa el ESP: AT handshake, luego intenta auto-conectar WiFi
+// Si falla, habilita BluFi para provisioning manual
 bool inicializarESP(uint32_t timeoutMs){
     char resp[256];
     bool ok = false;
@@ -78,33 +36,83 @@ bool inicializarESP(uint32_t timeoutMs){
         }
     }
 
-    // ) Enviar una vez AT+RESTORE="cerradura" y mostrar respuesta
-    size_t n1 = enviarComandoAT("AT+RESTORE", resp, sizeof(resp), 2000);
-    if (n1 > 0){
-        printf("\r\n[ESP][INIT] RESTORE respuesta: %s\r\n", resp);
-    } else {
-        printf("\r\n[ESP][INIT] RESTORE sin respuesta\r\n");
+    if(!ok){
+        printf("\r\n[ESP][INIT] No se pudo establecer comunicación AT\r\n");
+        return false;
     }
 
+    // 2) Configurar modo Station y habilitar auto-reconexión
+    enviarComandoAT("AT+CWMODE=1", resp, sizeof(resp), 2000);
+    printf("\r\n[ESP][INIT] Modo Station configurado\r\n");
+    
+    enviarComandoAT("AT+CWAUTOCONN=1", resp, sizeof(resp), 2000);
+    printf("\r\n[ESP][INIT] Auto-reconexión habilitada\r\n");
 
-    // 2) Enviar una vez AT+BLUFINAME="cerradura" y mostrar respuesta
-    size_t n2 = enviarComandoAT("AT+BLUFINAME=\"cerradura\"", resp, sizeof(resp), 2000);
-    if (n2 > 0){
-        printf("\r\n[ESP][INIT] BLUFINAME respuesta: %s\r\n", resp);
+    // 3) Verificar si ya tiene credenciales guardadas
+    size_t n = enviarComandoAT("AT+CWJAP?", resp, sizeof(resp), 2000);
+    if (n > 0 && strstr(resp, "+CWJAP:")){
+        printf("\r\n[ESP][INIT] Credenciales WiFi detectadas, intentando conectar...\r\n");
+        // Ya tiene credenciales, el ESP intentará conectar automáticamente
+        return true;
     } else {
-        printf("\r\n[ESP][INIT] BLUFINAME sin respuesta\r\n");
-    }
+        printf("\r\n[ESP][INIT] Sin credenciales WiFi guardadas\r\n");
+        printf("\r\n[ESP][INIT] Habilitando BluFi para provisioning...\r\n");
+        
+        // 4) Configurar nombre de BluFi
+        size_t n2 = enviarComandoAT("AT+BLUFINAME=\"cerradura\"", resp, sizeof(resp), 2000);
+        if (n2 > 0){
+            printf("\r\n[ESP][INIT] BLUFINAME respuesta: %s\r\n", resp);
+        }
 
-    // 3) Enviar AT+BLUFI=1 y mostrar respuesta
-    size_t n3 = enviarComandoAT("AT+BLUFI=1", resp, sizeof(resp), 2000);
-    if (n3 > 0){
-        printf("\r\n[ESP][INIT] BLUFI=1 respuesta: %s\r\n", resp);
-    } else {
-        printf("\r\n[ESP][INIT] BLUFI=1 sin respuesta\r\n");
+        // 5) Habilitar BluFi
+        size_t n3 = enviarComandoAT("AT+BLUFI=1", resp, sizeof(resp), 2000);
+        if (n3 > 0){
+            printf("\r\n[ESP][INIT] BLUFI=1 respuesta: %s\r\n", resp);
+            printf("\r\n[ESP][INIT] Use la app ESP BluFi para configurar WiFi\r\n");
+        }
+        
+        return true;
     }
+}
 
-    // Devolver si AT->OK se logró (el resto es informativo)
-    return ok;
+// Resetea las credenciales WiFi del ESP (llamar solo cuando usuario lo solicite)
+bool resetearCredencialesESP(void){
+    char resp[512];
+    
+    printf("\r\n[ESP][RESET] Borrando credenciales WiFi...\r\n");
+    
+    // AT+RESTORE borra todas las configuraciones (incluyendo WiFi)
+    size_t n = enviarComandoAT("AT+RESTORE", resp, sizeof(resp), 5000);
+    if (n > 0){
+        printf("\r\n[ESP][RESET] RESTORE respuesta (%u bytes)\r\n", (unsigned)n);
+        
+        // Buscar "OK" seguido de CRLF (más robusto que solo OK)
+        // La respuesta típica es: ...AT+RESTORE\r\n\r\nOK\r\n\r\nready\r\n
+        bool foundOK = false;
+        for(size_t i = 0; i < n - 3; i++){
+            if(resp[i] == 'O' && resp[i+1] == 'K' && 
+               (resp[i+2] == '\r' || resp[i+2] == '\n')){
+                foundOK = true;
+                break;
+            }
+        }
+        
+        if(foundOK){
+            printf("\r\n[ESP][RESET] Credenciales borradas exitosamente\r\n");
+            printf("\r\n[ESP][RESET] El ESP se reiniciará...\r\n");
+            delay(3000); // Esperar a que el ESP se reinicie completamente
+            
+            // Re-inicializar comunicación AT
+            printf("\r\n[ESP][RESET] Reinicializando comunicación...\r\n");
+            delay(1000);
+            inicializarESP(8000);
+            
+            return true;
+        }
+    }
+    
+    printf("\r\n[ESP][RESET] Error al borrar credenciales\r\n");
+    return false;
 }
 
 /* ---------------------------------------------------------------------------

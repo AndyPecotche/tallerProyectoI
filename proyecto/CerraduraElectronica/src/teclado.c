@@ -105,7 +105,7 @@ int tecladoLeerPin(char *pin, uint32_t *ultimaActividad) {
         lastIndex = 0xFFFF;
     }
 
-    delay(20); // antirrebote ligero; edge evita repetidos
+    // Delay m\u00ednimo - el edge detection ya maneja antirrebote
     return 0;
 }
 

@@ -11,7 +11,12 @@
    Base de datos local de usuarios
 --------------------------------------------------------------------------- */
 PinUsuario_t listaPins[MAX_PINS] = {
-    { "11111", true, "", "", "master" }  // PIN maestro
+    { "11111", true, "", "", "master" },  // PIN maestro
+    { "22222", true, "9876543210FF", "0001", "andy" },
+    { "33333", true, "1234567890AB", "0002", "pepe" },
+    { "44444", true, "1211899891AA", "0003", "juan" },
+    { "55555", true, "", "0004", "invitado" },
+    { "66666", true, "", "", "usuario6" } //Tiraria error al intentar grabar Huella
 };
 
 /* ---------------------------------------------------------------------------
@@ -120,13 +125,76 @@ const char* obtenerTagPorRFID(const char *rfid) {
     return NULL;
 }
 
+/* ---------------------------------------------------------------------------
+   Obtener el tag asociado a una huella registrada
+   - huellaId es el string de 4 dígitos ("0001", etc.)
+   - Devuelve puntero al tag si existe y está activo
+   - Devuelve "usuario" si no hay tag pero huella coincide
+   - Devuelve NULL si la huella no está asociada
+--------------------------------------------------------------------------- */
+const char* obtenerTagPorHuella(const char *huellaId) {
+    if(!huellaId) return NULL;
+    for (int i = 0; i < MAX_PINS; i++) {
+        if (listaPins[i].activo && strlen(listaPins[i].huella) > 0 && strcmp(listaPins[i].huella, huellaId) == 0) {
+            if (strlen(listaPins[i].tag) > 0) {
+                return listaPins[i].tag;
+            }
+            return "usuario";
+        }
+    }
+    return NULL;
+}
+
+/* ---------------------------------------------------------------------------
+   Validar huella (ID string) y logear bienvenida centralizada
+--------------------------------------------------------------------------- */
+bool validarHuella(const char *huellaId){
+    if(!huellaId) return false;
+    printf("\r\n[DEBUG] Buscando huella: '%s'\r\n", huellaId);
+    for (int i = 0; i < MAX_PINS; i++) {
+        if (listaPins[i].activo) {
+            printf("[DEBUG] Pin[%d]: activo=%d huella='%s' strlen=%u\r\n", 
+                   i, listaPins[i].activo, listaPins[i].huella, (unsigned)strlen(listaPins[i].huella));
+        }
+        if (listaPins[i].activo && strlen(listaPins[i].huella) > 0 && strcmp(listaPins[i].huella, huellaId) == 0) {
+            const char *tag = (strlen(listaPins[i].tag) > 0)? listaPins[i].tag : "usuario";
+            printf("\r\n[ACCESO] Huella ID=%s - Bienvenido, %s\r\n", huellaId, tag);
+            return true;
+        }
+    }
+    printf("[DEBUG] No se encontró coincidencia para huella '%s'\r\n", huellaId);
+    return false;
+}
+
+/* ---------------------------------------------------------------------------
+   Obtener el ID de huella asignado para un PIN
+   - Si tiene asignado en listaPins, se devuelve ese
+   - Si no, se deriva uno estable usando el índice del arreglo
+--------------------------------------------------------------------------- */
+bool obtenerHuellaAsignadaPorPin(const char *pin, char outId[5]){
+    if(!pin || !outId) return false;
+    for (int i = 0; i < MAX_PINS; i++) {
+        if (listaPins[i].activo && strcmp(listaPins[i].codigo, pin) == 0) {
+            if (strlen(listaPins[i].huella) >= 4) {
+                strncpy(outId, listaPins[i].huella, 4);
+                outId[4] = '\0';
+                return true;
+            } else {
+                // No tiene ID de huella asignado: no permitir continuar
+                return false;
+            }
+        }
+    }
+    return false;
+}
+
 bool sincronizarConServidor(void) {
     printf("\r\n[SYNC] Iniciando sincronización con servidor...\r\n");
     
     PinUsuario_t pinsServidor[MAX_PINS];
     memset(pinsServidor, 0, sizeof(pinsServidor));
     
-    size_t count = espHTTPGetPins("http://192.168.0.190:3000/syncPins/?allPins=true", 
+    size_t count = espHTTPGetPins("http://192.168.101.87:3000/syncPins/?allPins=true", 
                                    pinsServidor, MAX_PINS, 8000);
     
     if(count == 0){
