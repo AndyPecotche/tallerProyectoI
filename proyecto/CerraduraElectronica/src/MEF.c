@@ -66,12 +66,14 @@ void GPIO1_IRQHandler(void){
 --------------------------------------------------------------------------- */
 void mefInit(void){
     boardConfig();
+    driverConfig();
     configurarPines();
     tecladoInit();
     if (ALERTAS_ENABLE) alertasInit();
     if (SENSOR_WIFI_ENABLE) { espATInit(115200); sincronizarConServidor(); }
     if (SENSOR_HUELLA_ENABLE) {as608Init(0); as608SetDebug(1); as608ScanReset();}
                         // Nivel de debug fingerprint (1=básico, 2=detallado) // Preparar mini MEF del AS608
+    sincronizarConServidor();
     configurarInterrupcionPRESENCIA();
     configurarInterrupcionRFID();
     printf("\r\n[SISTEMA] Cerradura electrónica iniciada.\r\n");

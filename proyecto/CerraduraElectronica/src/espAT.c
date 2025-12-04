@@ -181,7 +181,7 @@ static size_t parsearJSONPins(const char *json, size_t jsonLen, PinUsuario_t *pi
         if(hPtr && hPtr < objEnd){
             hPtr += 10;
             size_t i = 0;
-            while(hPtr < objEnd && *hPtr != '"' && i < 3){
+            while(hPtr < objEnd && *hPtr != '"' && i < 4){
                 pin.huella[i++] = *hPtr++;
             }
             pin.huella[i] = '\0';
