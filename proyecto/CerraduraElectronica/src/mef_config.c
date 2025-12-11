@@ -27,7 +27,7 @@ void configurarInterrupcionRFID(void){
     if (SIMULAR_RFID_INTERRUPT) {
         Chip_SCU_GPIOIntPinSel(1, 0, 8); // TEC2 -> GPIO0[8]
     } else {
-        Chip_SCU_PinMux(4, 5, SCU_MODE_PULLDOWN | SCU_MODE_INBUFF_EN | SCU_MODE_ZIF_DIS, FUNC0);
+        Chip_SCU_PinMux(4, 5, SCU_MODE_PULLUP | SCU_MODE_INBUFF_EN | SCU_MODE_ZIF_DIS, FUNC0);
         Chip_GPIO_SetPinDIRInput(LPC_GPIO_PORT, 2, 5);
         Chip_SCU_GPIOIntPinSel(1, 2, 5); // RFID -> GPIO2[5]
     }
