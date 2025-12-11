@@ -66,6 +66,7 @@ void GPIO1_IRQHandler(void){
 --------------------------------------------------------------------------- */
 void mefInit(void){
     boardConfig();
+    driverConfig();
     configurarPines();
     tecladoInit();
     if (ALERTAS_ENABLE) alertasInit();
