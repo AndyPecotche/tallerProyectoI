@@ -3,6 +3,15 @@
 
 #include <stdbool.h>
 #include "espAT.h"
+#include "mef_config.h"
+#include <string.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdint.h>
+#include "display.h"
+#include "alertas.h"
+
+#define MAX_PINS   99
 
 /* Funciones principales */
 bool validarPin(const char *pin);
@@ -26,6 +35,13 @@ bool asociarHuellaaPin(const char *pin, const char *huella);
 bool validarRFID(const char *rfid);
 
 /* Sincronización con servidor */
-bool sincronizarConServidor(void);
+unsigned char sincronizarConServidor(void);
+
+bool esPinMaster(const char *pin);
+
+
+bool eliminarHuellaLocal(const char *pin);
+
+void eliminarTodasHuellasLocal(void);
 
 #endif /* VALIDACION_H_ */

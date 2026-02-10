@@ -12,6 +12,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "display.h"
 
 /*=====[C++ - begin]=========================================================*/
 

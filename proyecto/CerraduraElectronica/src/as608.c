@@ -176,14 +176,14 @@ static uint8_t as608CmdAck(uint8_t instr, const uint8_t *extra, uint16_t extraLe
     return as608GetAck(resp, sizeof(resp), timeoutMs);
 }
 
-static uint8_t as608CmdGetImageLong(void){
+uint8_t as608CmdGetImageLong(void){
     return as608CmdAck(0x01, NULL, 0,
                        AS608_GETIMAGE_LONG_TIMEOUT_MS,
                        AS608_DELAY_BEFORE_SEND_MS,
                        AS608_FLUSH_MS_SHORT);
 }
 
-static uint8_t as608CmdImage2Tz(uint8_t slot /*1 o 2*/){
+uint8_t as608CmdImage2Tz(uint8_t slot /*1 o 2*/){
     uint8_t extra = slot;
     return as608CmdAck(0x02, &extra, 1,
                        AS608_IMAGE2TZ_TIMEOUT_MS,
@@ -275,9 +275,9 @@ static bool as608EnrollCapture(uint8_t slot, int pasoIndex){
     uint32_t lastAttempt = 0;
     int errorCount = 0;
     int tries = 0;
-    const uint32_t TIMEOUT_MS = 30000; // 30 segundos timeout
+    const uint32_t TIMEOUT = 30000; // 30 segundos timeout
 
-    while ((tickRead() - start) < TIMEOUT_MS){
+    while ((tickRead() - start) < TIMEOUT){
         if((tickRead() - lastAttempt) < AS608_ENROLL_ATTEMPT_INTERVAL_MS){
             delay(10);
             continue;
@@ -326,16 +326,23 @@ bool as608EnrollAtId(uint16_t idTarget, char idOut[5]){
     
     // PreparaciÃ³n del sensor
     printf("\r\n[AS608][ENROLL@ID] Preparando sensor...\r\n");
+    display_clear();
+    display_println("Preparando sensor...", 20);
+    display_update();
+
     as608FlushAndDelay(100, 200);
     
     printf("[AS608][ENROLL@ID] Paso 1: Coloque dedo (imÃ¡gen 1)\r\n");
+    display_clear();
+    display_println("COLOQUE DEDO EN", 10);
+    display_println("EL SENSOR ", 30);
+    display_update();
     delay(2000);
     if(!as608EnrollCapture(0x01, 1)) return false;
-
-    printf("[AS608][ENROLL@ID] Retire dedo...\r\n");
-    delay(3000);
     as608FlushRx(50);
     printf("[AS608][ENROLL@ID] Paso 2: Coloque nuevamente el mismo dedo (imÃ¡gen 2)\r\n");
+    display_println("No lo retire", 50);
+    display_update();
     delay(2000);
     if(!as608EnrollCapture(0x02, 2)) return false;
 
@@ -348,6 +355,10 @@ bool as608EnrollAtId(uint16_t idTarget, char idOut[5]){
 
     if(idTarget > 0x00A3){
         printf("[AS608][ENROLL@ID] ID fuera de rango: %u\r\n", (unsigned)idTarget);
+        display_clear();
+	    display_println("ID FUERA", 10);
+	    display_println("DE RANGO", 20);
+	    display_update();
         return false;
     }
 
@@ -357,6 +368,10 @@ bool as608EnrollAtId(uint16_t idTarget, char idOut[5]){
         return false;
     }
     printf("[AS608][ENROLL@ID] Huella almacenada ID=%u\r\n", (unsigned)idTarget);
+    display_clear();
+    display_println("LISTO", 20);
+    display_println("HUELLA GUARDADA", 30);
+    display_update();
     snprintf((char*)idOut, 5, "%04u", (unsigned)idTarget);
     return true;
 }
@@ -389,6 +404,7 @@ typedef enum {
     ST_WAIT_IMAGE2TZ,
     ST_SEND_SEARCH,
     ST_WAIT_SEARCH,
+	ST_DONE_NOFINGER,
     ST_DONE_MATCH,
     ST_DONE_NOMATCH,
     ST_DONE_ERROR
@@ -461,6 +477,7 @@ as608ScanStatus_t as608ScanStep(uint16_t *idOut, uint16_t *scoreOut){
             // Si estÃ¡ idle, preparar nuevo intento
             g_scan.st = ST_SEND_GETIMAGE;
             // continuar flujo
+            break;
         case ST_SEND_GETIMAGE: {
             g_scan.respLen = 0;
             as608FlushRx(AS608_FLUSH_MS_SHORT);
@@ -485,14 +502,14 @@ as608ScanStatus_t as608ScanStep(uint16_t *idOut, uint16_t *scoreOut){
                     g_scan.tCmdStart = tickRead();
                     return AS608_SCAN_INPROGRESS;
                 } else if (code == 0x02){
-                    g_scan.st = ST_DONE_NOMATCH; // sin dedo
+                    g_scan.st = ST_DONE_NOFINGER; // sin dedo
                 } else {
                     g_scan.st = ST_DONE_ERROR;
                 }
             } else {
                 // timeout razonable para GetImage
                 if ((tickRead() - g_scan.tCmdStart) > AS608_GETIMAGE_LONG_TIMEOUT_MS){
-                    g_scan.st = ST_DONE_NOMATCH; // tratar como sin dedo para no ser invasivo
+                    g_scan.st = ST_DONE_NOFINGER; // tratar como sin dedo para no ser invasivo
                 }
             }
             break;
@@ -577,17 +594,23 @@ as608ScanStatus_t as608ScanStep(uint16_t *idOut, uint16_t *scoreOut){
                 }
             } else {
                 if ((tickRead() - g_scan.tCmdStart) > AS608_SEARCH_TIMEOUT_MS){
-                    g_scan.st = ST_DONE_NOMATCH;
+                    g_scan.st = ST_DONE_NOFINGER;
                 }
             }
             break;
         }
+
         case ST_DONE_MATCH:
             // Escribir resultados almacenados antes de retornar
             if (idOut) *idOut = g_scan.lastId;
             if (scoreOut) *scoreOut = g_scan.lastScore;
             g_scan.st = ST_IDLE; // listo para prÃ³ximo intento
             return AS608_SCAN_MATCH;
+
+           case ST_DONE_NOFINGER:
+                    g_scan.st = ST_IDLE;
+                    return AS608_SCAN_NOFINGER; // Devolvemos el estado nuevo
+
         case ST_DONE_NOMATCH:
             g_scan.st = ST_IDLE;
             return AS608_SCAN_NOMATCH;
@@ -600,4 +623,48 @@ as608ScanStatus_t as608ScanStep(uint16_t *idOut, uint16_t *scoreOut){
 
 int as608GetTemplateCount(void){
     return as608CmdTemplateCount();
+}
+
+/* Comando DeletChar (0x0C): Borra N plantillas comenzando en PageID */
+static uint8_t as608CmdDelete(uint16_t pageID, uint16_t n) {
+    uint8_t payload[] = {
+        (uint8_t)(pageID >> 8), (uint8_t)(pageID & 0xFF),
+        (uint8_t)(n >> 8), (uint8_t)(n & 0xFF)
+    };
+    return as608CmdAck(0x0C, payload, sizeof(payload), 1000, 0, AS608_FLUSH_MS_SHORT);
+}
+
+// Función pública para borrar una ID específica
+bool as608DeleteId(uint16_t id) {
+    printf("\r\n[AS608] Borrando ID %u...\r\n", id);
+    uint8_t r = as608CmdDelete(id, 1); // Borramos 1 sola
+    display_clear();
+    char buffer[30];
+	sprintf(buffer, "ERROR %c", r); // Ajustado para entrar en pantalla
+	display_println(buffer, 30);
+    display_update();
+    if (r == 0x00) {
+        printf("[AS608] ID %u borrada correctamente\r\n", id);
+        return true;
+    }
+    printf("[AS608] Error al borrar ID %u (Code 0x%02X)\r\n", id, r);
+    return false;
+}
+
+
+// Busca la huella que está en el Buffer 1 dentro de toda la memoria.
+// Retorna: ID encontrado, o -1 si no existe.
+int as608SearchInBuffer1(void) {
+    // Comando Search (0x04): BufferID=1, Start=0, Count=Capacidad(300)
+    uint8_t payload[] = { 0x01, 0x00, 0x00, 0x01, 0x2C };
+
+    // Enviamos comando
+    uint8_t p = as608CmdAck(0x04, payload, sizeof(payload), 1000, 0, AS608_FLUSH_MS_SHORT);
+
+    if (p == 0x00) {
+        // ¡Encontrado! Leemos el ID de la respuesta
+        uint16_t foundId = (g_scan.resp[10] << 8) | g_scan.resp[11];
+        return foundId;
+    }
+    return -1; // No encontrado
 }

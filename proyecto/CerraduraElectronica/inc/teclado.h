@@ -3,7 +3,9 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "display.h"
 
+#define PIN_LENGTH 5
 /* Inicialización y control del teclado */
 void tecladoInit(void);
 void tecladoReset(void);

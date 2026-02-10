@@ -4,8 +4,6 @@
 /* ---------------------------------------------------------------------------
    Configuraciï¿½n de pines de seï¿½alizaciï¿½n
 --------------------------------------------------------------------------- */
-#define LED_ALERTA     LEDB        // LED indicador (puede ser LED1 o LEDB)
-
 // ConfiguraciÃ³n para GPIO0[0]
 #define BUZZER_GPIO_PORT 0
 #define BUZZER_GPIO_PIN  0
@@ -14,47 +12,38 @@
    Inicializaciï¿½n de perifï¿½ricos de alerta
 --------------------------------------------------------------------------- */
 void alertasInit(void) {
-    gpioConfig(LED_ALERTA, GPIO_OUTPUT);
     
     // Configurar GPIO0[0] para el buzzer
     Chip_GPIO_SetPinDIROutput(LPC_GPIO_PORT, BUZZER_GPIO_PORT, BUZZER_GPIO_PIN);
     Chip_GPIO_SetPinState(LPC_GPIO_PORT, BUZZER_GPIO_PORT, BUZZER_GPIO_PIN, false);
-    
-    gpioWrite(LED_ALERTA, OFF);
 }
 
 /* ---------------------------------------------------------------------------
    Alerta de ï¿½XITO:
-   - Enciende LED fijo por 1 segundo
-   - Emite un solo pitido corto del buzzer
 --------------------------------------------------------------------------- */
 void alertaExito(void) {
-    printf("\r\n[ALERTA] ï¿½xito\r\n");
+    printf("\r\n[ALERTA] Acceso Correcto\r\n");
 
-    gpioWrite(LED_ALERTA, ON);
+    // Primer beep
     Chip_GPIO_SetPinState(LPC_GPIO_PORT, BUZZER_GPIO_PORT, BUZZER_GPIO_PIN, true);
-    delay(150);
+    delay(100);
     Chip_GPIO_SetPinState(LPC_GPIO_PORT, BUZZER_GPIO_PORT, BUZZER_GPIO_PIN, false);
 
-    delay(850);
-    gpioWrite(LED_ALERTA, OFF);
+    // Pequeña pausa
+    delay(120);
+
+    // Segundo beep
+    Chip_GPIO_SetPinState(LPC_GPIO_PORT, BUZZER_GPIO_PORT, BUZZER_GPIO_PIN, true);
+    delay(100);
+    Chip_GPIO_SetPinState(LPC_GPIO_PORT, BUZZER_GPIO_PORT, BUZZER_GPIO_PIN, false);
 }
 
 /* ---------------------------------------------------------------------------
    Alerta de ERROR:
-   - Hace titilar el LED 3 veces
-   - Emite 3 pitidos cortos del buzzer
 --------------------------------------------------------------------------- */
 void alertaError(void) {
     printf("\r\n[ALERTA] Error\r\n");
-
-    for (int i = 0; i < 3; i++) {
-        gpioWrite(LED_ALERTA, ON);
-        Chip_GPIO_SetPinState(LPC_GPIO_PORT, BUZZER_GPIO_PORT, BUZZER_GPIO_PIN, true);
-        delay(100);
-
-        Chip_GPIO_SetPinState(LPC_GPIO_PORT, BUZZER_GPIO_PORT, BUZZER_GPIO_PIN, false);
-        gpioWrite(LED_ALERTA, OFF);
-        delay(150);
-    }
+	Chip_GPIO_SetPinState(LPC_GPIO_PORT, BUZZER_GPIO_PORT, BUZZER_GPIO_PIN, true);
+	delay(1000);
+	Chip_GPIO_SetPinState(LPC_GPIO_PORT, BUZZER_GPIO_PORT, BUZZER_GPIO_PIN, false);
 }

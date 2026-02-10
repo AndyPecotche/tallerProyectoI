@@ -23,7 +23,6 @@ static const char keypadMap[KEYPAD_ROWS][KEYPAD_COLS] = {
    VARIABLES INTERNAS
 --------------------------------------------------------------------------- */
 static keypad_t keypad;
-#define PIN_LENGTH 5
 
 static char pinIngresado[PIN_LENGTH + 1];
 static uint8_t pos = 0;
@@ -85,15 +84,20 @@ int tecladoLeerPin(char *pin, uint32_t *ultimaActividad) {
 
             // Acumular dígito
             if (pos < PIN_LENGTH) {
-                pinIngresado[pos++] = teclaChar;
-                printf("*");
-                fflush(stdout);
+            	if((teclaChar >= '0')&&(teclaChar <= '9')){\
+					pinIngresado[pos++] = teclaChar;
+					display_println(pinIngresado, 35);
+					display_update();
+					printf("*");
+					fflush(stdout);
+            	}
             }
 
             // PIN completo
             if (pos == PIN_LENGTH) {
                 pinIngresado[PIN_LENGTH] = '\0';
                 strcpy(pin, pinIngresado);
+                display_clear();
                 tecladoReset();
                 printf("\r\n[TECLADO] PIN completo: %s\r\n", pin);
                 return 1;
@@ -126,7 +130,7 @@ bool tecladoLeerTecla(char *tecla) {
             uint16_t fila = teclaIndex / KEYPAD_COLS;
             uint16_t columna = teclaIndex % KEYPAD_COLS;
             *tecla = keypadMap[fila][columna];
-            printf("\r\n[TECLADO] Tecla presionada: %c\r\n", *tecla);
+            //printf("\r\n[TECLADO] Tecla presionada: %c\r\n", *tecla);
             delay(20);
             return true;
         }

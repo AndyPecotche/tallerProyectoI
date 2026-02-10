@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "display.h"
 
 /*
  * Módulo AS608 (sensor de huellas, similar R305)
@@ -47,7 +48,8 @@ typedef enum {
 	AS608_SCAN_INPROGRESS,
 	AS608_SCAN_MATCH,
 	AS608_SCAN_NOMATCH,
-	AS608_SCAN_ERROR
+	AS608_SCAN_ERROR,
+	AS608_SCAN_NOFINGER
 } as608ScanStatus_t;
 
 
@@ -60,6 +62,11 @@ typedef enum {
  * - AS608_SCAN_ERROR: error de comunicación o protocolo
  * - AS608_SCAN_IDLE: aún no comenzó; se inicia automáticamente en la primera llamada
  */
+
+uint8_t as608CmdGetImageLong(void);
+
+uint8_t as608CmdImage2Tz(uint8_t slot);
+
 as608ScanStatus_t as608ScanStep(uint16_t *idOut, uint16_t *scoreOut);
 
 /* Obtiene la cantidad de templates almacenados (para diagnóstico). */
@@ -67,5 +74,11 @@ int as608GetTemplateCount(void);
 
 /* Borra todos los templates almacenados en el sensor (comando Empty 0x0D). */
 bool as608ClearAllTemplates(void);
+
+void as608ScanReset(void);
+
+bool as608DeleteId(uint16_t id);
+
+int as608SearchInBuffer1(void);
 
 #endif /* AS608_H_ */

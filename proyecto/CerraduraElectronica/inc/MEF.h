@@ -3,13 +3,16 @@
 
 #include <stdbool.h>
 #include "stepperMotor.h"
+#include "display.h"
+#include "espAT.h"
+
 /* ---------------------------------------------------------------------------
    Definición de estados de la MEF principal
 --------------------------------------------------------------------------- */
 typedef enum {
    REPOSO,
    ESPERANDO_ACCION,
-   LEER_RFID,
+   VALIDAR_RFID,
    VALIDAR,
    SENSOR_CIERRE,
    BLOQUEADO,
