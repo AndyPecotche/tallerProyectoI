@@ -232,7 +232,7 @@ void mefUpdate(void){
 
             // Teclado: si completa 5 dígitos, validar
 			// tecladoLeerPin internamente resetea el timeout en cada tecla
-			display_clear();
+			//display_clear();
 			display_println("SISTEMA DE ACCESO", 0);
 			display_println("INGRESE PIN:", 18);
 			//display_println("cerradura cerrada", 50);
@@ -462,6 +462,7 @@ void mefUpdate(void){
 					}
 						ultimaPresencia = tickRead();
 						estadoActual = ESPERANDO_ACCION;
+						display_clear();
 				  } else {
 					  printf("\r\n [SENSOR] Esperando cierre de puerta...\r\n");
 				  }
