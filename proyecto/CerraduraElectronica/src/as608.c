@@ -478,7 +478,8 @@ as608ScanStatus_t as608ScanStep(uint16_t *idOut, uint16_t *scoreOut){
             g_scan.st = ST_SEND_GETIMAGE;
             // continuar flujo
             break;
-        case ST_SEND_GETIMAGE: {
+        // Envia mensaje al AS608 para tomar una imagen, luego espera ACK sin bloquear (vuelve a mef con ST_WAIT_GETIMAGE)
+        case ST_SEND_GETIMAGE: { 
             g_scan.respLen = 0;
             as608FlushRx(AS608_FLUSH_MS_SHORT);
             // Enviar comando GetImage
@@ -489,7 +490,9 @@ as608ScanStatus_t as608ScanStep(uint16_t *idOut, uint16_t *scoreOut){
             g_scan.st = ST_WAIT_GETIMAGE;
             return AS608_SCAN_INPROGRESS;
         }
+        // Espera ACK de GetImage sin bloquear, analiza resultado y avanza estado
         case ST_WAIT_GETIMAGE: {
+            // Leer algunos bytes disponibles en un slice corto para no bloquear demasiado tiempo
             as608ReadSlice(g_scan.resp, &g_scan.respLen, sizeof(g_scan.resp), SLICE_MS);
             uint8_t code = as608TryParseAck(g_scan.resp, g_scan.respLen);
             if (code != 0xFF){
@@ -507,9 +510,9 @@ as608ScanStatus_t as608ScanStep(uint16_t *idOut, uint16_t *scoreOut){
                     g_scan.st = ST_DONE_ERROR;
                 }
             } else {
-                // timeout razonable para GetImage
+                // Si no se recibiÃ³ ACK vÃ¡lido, pero ya pasÃ³ un tiempo, asumir sin dedo para no quedar bloqueado
                 if ((tickRead() - g_scan.tCmdStart) > AS608_GETIMAGE_LONG_TIMEOUT_MS){
-                    g_scan.st = ST_DONE_NOFINGER; // tratar como sin dedo para no ser invasivo
+                    g_scan.st = ST_DONE_NOFINGER; // tratar como sin dedo para avanzar flujo y evitar bloqueo indefinido
                 }
             }
             break;
@@ -634,7 +637,7 @@ static uint8_t as608CmdDelete(uint16_t pageID, uint16_t n) {
     return as608CmdAck(0x0C, payload, sizeof(payload), 1000, 0, AS608_FLUSH_MS_SHORT);
 }
 
-// Función pública para borrar una ID específica
+// Funciï¿½n pï¿½blica para borrar una ID especï¿½fica
 bool as608DeleteId(uint16_t id) {
     printf("\r\n[AS608] Borrando ID %u...\r\n", id);
     uint8_t r = as608CmdDelete(id, 1); // Borramos 1 sola
@@ -652,7 +655,7 @@ bool as608DeleteId(uint16_t id) {
 }
 
 
-// Busca la huella que está en el Buffer 1 dentro de toda la memoria.
+// Busca la huella que estï¿½ en el Buffer 1 dentro de toda la memoria.
 // Retorna: ID encontrado, o -1 si no existe.
 int as608SearchInBuffer1(void) {
     // Comando Search (0x04): BufferID=1, Start=0, Count=Capacidad(300)
@@ -662,7 +665,7 @@ int as608SearchInBuffer1(void) {
     uint8_t p = as608CmdAck(0x04, payload, sizeof(payload), 1000, 0, AS608_FLUSH_MS_SHORT);
 
     if (p == 0x00) {
-        // ¡Encontrado! Leemos el ID de la respuesta
+        // ï¿½Encontrado! Leemos el ID de la respuesta
         uint16_t foundId = (g_scan.resp[10] << 8) | g_scan.resp[11];
         return foundId;
     }

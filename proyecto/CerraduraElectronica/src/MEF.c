@@ -26,6 +26,11 @@ char rfid[10];
 
 bool_t open = false;
 
+//Variables para la configuracion del escaneo de huellas
+static long int agendaHuella = 0;
+static bool escaneoActivo = false;
+const long int INTERVALO_HUELLA_MS = 600;
+
 /* ---------------------------------------------------------------------------
    Eventos de interrupción
 --------------------------------------------------------------------------- */
@@ -131,16 +136,16 @@ void GPIO0_IRQHandler(void){
 }
 
 ///* Canal 1: RFID interrupt */
-void PIN_INT1_IRQHandler(void){
-	// 1. Limpiamos la marca de interrupci�n para poder recibir la siguiente
-    Chip_PININT_ClearIntStatus(LPC_GPIO_PIN_INT, PININTCH1);
-    // 2. Avisamos al programa principal
-    eventoRFID = true;
-    //display_clear();
-    //display_println("RFID DETECTADO", 30);
-    //display_update();
-	printf("\r\n[INTERRUPCIÓN] RFID detectado\r\n");
-}
+// void PIN_INT1_IRQHandler(void){
+// 	// 1. Limpiamos la marca de interrupci�n para poder recibir la siguiente
+//     Chip_PININT_ClearIntStatus(LPC_GPIO_PIN_INT, PININTCH1);
+//     // 2. Avisamos al programa principal
+//     eventoRFID = true;
+//     //display_clear();
+//     //display_println("RFID DETECTADO", 30);
+//     //display_update();
+// 	printf("\r\n[INTERRUPCIÓN] RFID detectado\r\n");
+// }
 
 
 
@@ -221,8 +226,6 @@ void mefUpdate(void){
             break;
 
         case ESPERANDO_ACCION:{
-
-
             // Refresh timeout on presence pulses
             if (eventoPresencia){
                 eventoPresencia = false;
@@ -238,10 +241,10 @@ void mefUpdate(void){
 			//display_println("cerradura cerrada", 50);
 			display_update();
 			int resultado = tecladoLeerPin(pinIngresado, &ultimaPresencia);
-			if (resultado == 1){
-				ultimaPresencia = tickRead();
+			if (resultado == 1){ // PIN completo, pasar a validar
+				ultimaPresencia = tickRead(); 
 				estadoActual = VALIDAR;
-			} else if (resultado == -1){
+			} else if (resultado == -1){ // Acceso a menú admin por tecla '*'
 					display_clear();
 					display_println("SEGURIDAD", 10);
 					display_println("PIN ADMIN?", 22);
@@ -295,7 +298,7 @@ void mefUpdate(void){
 			}
 			
 			// RFID: si detecta tarjeta, pasar a validar
-			
+
 			if (leer_rfid_str(rfid, sizeof(rfid))) {
 				printf("\r\n[RFID] Leido: %s\r\n", rfid);
 				ultimaPresencia = tickRead(); // Mantiene el sistema despierto
@@ -308,9 +311,7 @@ void mefUpdate(void){
 
             // Mini MEF del AS608: pasos breves en cada ciclo
             {
-                static long int agendaHuella = 0;
-                static bool escaneoActivo = false;
-                const long int INTERVALO_HUELLA_MS = 600;
+
 
                 // Programar inicio de escaneo cada cierto intervalo
                 if (!escaneoActivo && (tickRead() - agendaHuella) >= INTERVALO_HUELLA_MS){
@@ -320,50 +321,56 @@ void mefUpdate(void){
                 }
 
                 if (escaneoActivo){
-                    short int id=0, score=0;
-                    as608ScanStatus_t st = as608ScanStep(&id, &score);
-                    if (st == AS608_SCAN_MATCH){
-                        char idStr[5];
-                        snprintf(idStr, sizeof(idStr), "%04u", (unsigned)id);
-                        ultimaPresencia = tickRead();
-                        if (validarHuella(idStr)){
-                        	const char *tag = obtenerTagPorHuella(idStr);
-                        	display_clear();
-							display_println("ACCESO CONCEDIDO", 20);
-							char buffer[30];
-							sprintf(buffer, "BIENVENIDO, %s", tag);
-							display_println(buffer, 35);
-							display_update();
-                            alertaExito();
-                            intentosFallidos = 0;
-                            if (!OMITIR_MOTOR) {
-                                abrirCerradura();
-                            } else {
-                                printf("\r\n[OMITIR MOTOR] Simulando apertura de cerradura\r\n");
-                            }
-                            estadoActual = SENSOR_CIERRE;
-                            escaneoActivo = false;
-                            break;
-                        }
-                   } else if (st == AS608_SCAN_NOMATCH){
-                            display_clear();
-							display_println("HUELLA NO", 20);
-							display_println("REGISTRADA", 35);
-							display_update();
-							alertaError();
-							delay(1500);
-							display_clear();
-                            escaneoActivo = false;
-                            ultimaPresencia = tickRead();
-
-                    } else if (st == AS608_SCAN_NOFINGER || st == AS608_SCAN_ERROR){
-                        escaneoActivo = false; // liberar hasta el proximo intento programado
-                    }
+					estadoActual = LEER_Y_VALIDAR_HUELLA; // Pasamos a estado de validación de huella para evaluar el resultado del escaneo
+					break; // Salimos del switch para procesar el escaneo en el próximo ciclo
                 }
 		}
-
         break;
         }
+
+		case LEER_Y_VALIDAR_HUELLA: {
+		short int id=0, score=0;
+        as608ScanStatus_t st = as608ScanStep(&id, &score);
+		if (st == AS608_SCAN_MATCH){
+			char idStr[5];
+			snprintf(idStr, sizeof(idStr), "%04u", (unsigned)id);
+			// ultimaPresencia = tickRead();
+			if (validarHuella(idStr)){
+				const char *tag = obtenerTagPorHuella(idStr);
+				display_clear();
+				display_println("ACCESO CONCEDIDO", 20);
+				char buffer[30];
+				sprintf(buffer, "BIENVENIDO, %s", tag);
+				display_println(buffer, 35);
+				display_update();
+				alertaExito();
+				intentosFallidos = 0;
+				if (!OMITIR_MOTOR) {
+					abrirCerradura();
+				} else {
+					printf("\r\n[OMITIR MOTOR] Simulando apertura de cerradura\r\n");
+				}
+				estadoActual = SENSOR_CIERRE;
+				escaneoActivo = false;
+				break;
+			}
+		} else if (st == AS608_SCAN_NOMATCH){
+				display_clear();
+				display_println("HUELLA NO", 20);
+				display_println("REGISTRADA", 35);
+				display_update();
+				alertaError();
+				delay(1500);
+				display_clear();
+				escaneoActivo = false;
+				ultimaPresencia = tickRead();
+
+		} else if (st == AS608_SCAN_NOFINGER || st == AS608_SCAN_ERROR){
+		 	escaneoActivo = false; // liberar hasta el proximo intento programado
+		}	
+			estadoActual = ESPERANDO_ACCION;
+			break;
+		}
 
         case VALIDAR_RFID: {
 			const char *tag = obtenerTagPorRFID(rfid);
