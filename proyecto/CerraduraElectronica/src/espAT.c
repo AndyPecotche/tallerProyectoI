@@ -97,10 +97,9 @@ bool inicializarESP(uint32_t timeoutMs){
 		printf(".");
 		delay(1000); // Preguntar cada 1 segundo
         count++;
-        if (count == 5) {
+        if (count == 4) {
             printf("\r\n[ESP][inicializarESP] Aún esperando conexión WiFi... Reiniciando ESP\r\n");
             enviarComandoAT("AT+RST", resp, sizeof(resp), 1000);
-            count = 0;
         }
 	}
 
@@ -422,7 +421,8 @@ bool espEnviarNuevoRFID(const char* pin, const char* rfidHex) {
 
         // Verificamos si el servidor respondi� OK (HTTP 200)
         // O si devuelve un JSON tipo {"status":"ok"}
-        if (strstr(respuesta, "200 OK") != NULL || strstr(respuesta, "\"ok\"") != NULL) {
+        if (strstr(respuesta, "UPDATED OK") != NULL || strstr(respuesta, "200 OK") != NULL ||
+            strstr(respuesta, "\"ok\"") != NULL || strstr(respuesta, "UPDATED") != NULL) {
             printf("[ESP] Registro en nube EXITOSO.\r\n");
             return true;
         }
