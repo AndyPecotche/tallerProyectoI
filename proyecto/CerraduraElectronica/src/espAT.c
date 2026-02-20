@@ -77,6 +77,7 @@ bool inicializarESP(uint32_t timeoutMs){
 	uint32_t waitStart = tickRead();
 
 	// Esperamos hasta 15 segundos a que nos den IP
+    int count = 0;
 	while((tickRead() - waitStart) < 15000){
 		// AT+CIPSTATUS devuelve:
 		// STATUS:2 -> Got IP (�xito)
@@ -95,6 +96,12 @@ bool inicializarESP(uint32_t timeoutMs){
 		}
 		printf(".");
 		delay(1000); // Preguntar cada 1 segundo
+        count++;
+        if (count == 5) {
+            printf("\r\n[ESP][inicializarESP] Aún esperando conexión WiFi... Reiniciando ESP\r\n");
+            enviarComandoAT("AT+RST", resp, sizeof(resp), 1000);
+            count = 0;
+        }
 	}
 
 
@@ -285,7 +292,7 @@ size_t espHTTPGetPins(PinUsuario_t *pinsOut, size_t maxPins, uint32_t timeoutMs)
     
     printf("\r\n[ESP] Solicitando lista de usuarios (Modo TCP)...\r\n");
     
-    if (!espRawHTTPGet("/syncPins/?allPins=true", httpResp, sizeof(httpResp))) {
+    if (!espHTTPGetViaAT("/syncPins/?allPins=true", httpResp, sizeof(httpResp))) {
         printf("\r\n[ESP][ERROR] Fall� la descarga TCP\r\n");
         return 0;
     }
@@ -393,7 +400,7 @@ bool espEnviarNuevaHuella(const char *pin, const char *idHuella) {
     // Construimos solo la parte del path (Ruta)
     sprintf(path, "/update-huella?pin=%s&huella=%s", pin, idHuella);
 
-    if (espRawHTTPGet(path, resp, sizeof(resp))) {
+    if (espHTTPGetViaAT(path, resp, sizeof(resp))) {
         if (strstr(resp, "UPDATED OK")) return true;
     }
     return false;
@@ -411,7 +418,7 @@ bool espEnviarNuevoRFID(const char* pin, const char* rfidHex) {
 
     // Reutilizamos tu funci�n de GET (asumiendo que usas espRawHTTPGet o similar)
     // Si tu servidor requiere POST, habr�a que adaptar esta parte.
-    if (espRawHTTPGet(ruta, respuesta, sizeof(respuesta))) {
+    if (espHTTPGetViaAT(ruta, respuesta, sizeof(respuesta))) {
 
         // Verificamos si el servidor respondi� OK (HTTP 200)
         // O si devuelve un JSON tipo {"status":"ok"}
@@ -453,7 +460,7 @@ double espObtenerTiempoServidor(void) {
     char resp[1024];
 
     // 1. Descargamos todo (Headers + Body)
-    if (espRawHTTPGet("/check-status", resp, sizeof(resp))) {
+    if (espHTTPGetViaAT("/check-status", resp, sizeof(resp))) {
 
         // 2. Buscamos d�nde empieza el JSON real (para ignorar headers)
         char *jsonBody = strchr(resp, '{');
@@ -528,4 +535,30 @@ bool espRawHTTPGet(const char *path, char *bufferResp, int bufferSize) {
 
     printf("[ESP] Error: Timeout esperando respuesta del servidor\r\n");
     return false;
+}
+
+// Intenta usar el comando AT de HTTP del módulo (AT+HTTPCGET="http://...")
+// Devuelve true y llena `bufferResp` si obtiene respuesta válida (body o JSON).
+// Si falla, hace fallback a `espRawHTTPGet()` (método TCP manual ya existente).
+bool espHTTPGetViaAT(const char *path, char *bufferResp, int bufferSize) {
+    char cmd[512];
+    // Construir URL completa
+    snprintf(cmd, sizeof(cmd), "AT+HTTPCGET=\"http://%s:%s%s\"", SERVER_IP, SERVER_PORT, path);
+
+    // Intentar via HTTPCGET (timeout generoso)
+    printf("\r\n[ESP][HTTPCGET] Ejecutando: %s\r\n", cmd);
+    memset(bufferResp, 0, bufferSize);
+    size_t len = enviarComandoAT(cmd, bufferResp, bufferSize, 10000);
+
+    if (len > 0) {
+        // Si encontramos JSON u otro contenido útil, devolvemos true
+        if (strchr(bufferResp, '{') != NULL || strstr(bufferResp, "HTTP/") != NULL || strstr(bufferResp, "+HTTPCGET:") != NULL) {
+            printf("[ESP][HTTPCGET] Respuesta recibida (%u bytes)\r\n", (unsigned)len);
+            return true;
+        }
+    }
+
+    // Fallback: usar método TCP raw
+    printf("[ESP][HTTPCGET] Fallback a TCP raw (espRawHTTPGet)\r\n");
+    return espRawHTTPGet(path, bufferResp, bufferSize);
 }

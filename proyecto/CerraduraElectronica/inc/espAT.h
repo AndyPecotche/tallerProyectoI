@@ -57,4 +57,7 @@ bool espBorrarHuellaServidor(const char *pin);
 bool espBorrarTodasHuellasServidor(void);
 double espObtenerTiempoServidor(void);
 bool espRawHTTPGet(const char *path, char *bufferResp, int bufferSize);
+// Intenta realizar un HTTP GET usando comando AT del módulo (HTTPCGET).
+// Si falla, hace fallback a `espRawHTTPGet` (TCP manual).
+bool espHTTPGetViaAT(const char *path, char *bufferResp, int bufferSize);
 #endif /* ESPAT_H_ */
