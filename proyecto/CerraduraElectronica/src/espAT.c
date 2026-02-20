@@ -13,34 +13,34 @@ void espATInit(uint32_t baudrate){
 
     uartConfig(ESP_UART, baudrate);
 
-	printf("\r\n[ESP][BOOT] Forzando reinicio del modulo...\r\n");
+    printf("\r\n[ESP][espATInit] ################################################################\r\n");
+	printf("\r\n[ESP][espATInit] Inicia espATInit Forzando reinicio del modulo...\r\n");
 
-	// 1. Por si acaso quedó en "Modo Transparente" (descarga colgada)
-	// Enviamos "+++" sin \r\n y esperamos 1 segundo. Esto corta cualquier transmisión.
+	// 1. Por si acaso quedï¿½ en "Modo Transparente" (descarga colgada)
+	// Enviamos "+++" sin \r\n y esperamos 1 segundo. Esto corta cualquier transmisiï¿½n.
 	uartWriteString(ESP_UART, "+++");
 	delay(1000);
 
 	// 2. Enviamos el comando de RESET de software
-	// AT+RST reinicia el chip (igual que quitarle la energía)
+	// AT+RST reinicia el chip (igual que quitarle la energï¿½a)
 	uartWriteString(ESP_UART, "AT+RST\r\n");
 
-	// 3. Esperamos a que arranque (el ESP suele escupir basura al arrancar)
-	printf("[ESP][BOOT] Esperando reinicio (3s)...\r\n");
-	delay(3000);
+	// 3. Esperamos a que arranque
+	printf("[ESP][espATInit] Esperando reinicio (1s)...\r\n");
+	delay(1000);
 
 	// 4. Limpiar basura del buffer UART
 	uint8_t dummy;
 	while(uartReadByte(ESP_UART, &dummy));
 
-    printf("\r\n[ESP] Init UART idx=%d baud=%u\r\n", (int)ESP_UART, (unsigned)baudrate);
-
-    printf("\r\n[ESP][INIT] Inicializando ESP (auto-connect/BluFi)...\r\n");
-    bool wifiInitOk = inicializarESP(10000);
+    printf("\r\n[ESP][espATInit] Init UART idx=%d baud=%u\r\n", (int)ESP_UART, (unsigned)baudrate);
+    printf("[ESP][espATInit] UART configurada, listo para comandos AT, termino ejecucion espATInit\r\n");
 }
 
 // Inicializa el ESP: AT handshake, luego intenta auto-conectar WiFi
 // Si falla, habilita BluFi para provisioning manual
 bool inicializarESP(uint32_t timeoutMs){
+    printf("\r\n[ESP][inicializarESP] ##############inicializarESP############### Inicializando ESP...\r\n");
     char resp[256];
     bool ok = false;
 
@@ -49,45 +49,43 @@ bool inicializarESP(uint32_t timeoutMs){
     while ((tickRead() - start) < timeoutMs){
         size_t n = enviarComandoAT("AT", resp, sizeof(resp), 1000);
         if (n > 0 && strstr(resp, "OK") != NULL){
-            printf("\r\n[ESP][INIT] AT -> OK\r\n");
+            printf("\r\n[ESP][inicializarESP] AT -> OK\r\n");
             ok = true;
             break;
         } else {
-            printf("\r\n[ESP][INIT] AT sin OK, reintentando...\r\n");
+            printf("\r\n[ESP][inicializarESP] AT sin OK, reintentando...\r\n");
             delay(500);
         }
     }
 
     if(!ok){
-        printf("\r\n[ESP][INIT] No se pudo establecer comunicaciÃ³n AT\r\n");
+        printf("\r\n[ESP][inicializarESP] No se pudo establecer comunicaciÃ³n AT\r\n");
         return false;
     }
 
     // 2) Configurar modo Station y habilitar auto-reconexiÃ³n
     enviarComandoAT("AT+CWMODE=1", resp, sizeof(resp), 1000);
-    printf("\r\n[ESP][INIT] Modo Station configurado\r\n");
+    printf("\r\n[ESP][inicializarESP] Modo Station configurado\r\n");
 
     enviarComandoAT("AT+CIPMUX=0", resp, sizeof(resp), 1000);
-    printf("\r\n[ESP][INIT] Forzando modo Single Connection (CIPMUX=0)\r\n");
+    printf("\r\n[ESP][inicializarESP] Forzando modo Single Connection (CIPMUX=0)\r\n");
 
     enviarComandoAT("AT+CWAUTOCONN=1", resp, sizeof(resp), 1000);
-    printf("\r\n[ESP][INIT] Auto-reconexiÃ³n habilitada\r\n");
+    printf("\r\n[ESP][inicializarESP] Auto-reconexiÃ³n habilitada\r\n");
 
-
-
-	// --- ESPERAR CONEXIÓN REAL ---
+	// --- ESPERAR CONEXIï¿½N REAL ---
 	uint32_t waitStart = tickRead();
 
 	// Esperamos hasta 15 segundos a que nos den IP
 	while((tickRead() - waitStart) < 15000){
 		// AT+CIPSTATUS devuelve:
-		// STATUS:2 -> Got IP (Éxito)
-		// STATUS:3 -> Connected (Éxito, socket abierto)
-		// STATUS:5 -> WiFi Disconnected (Aún no conecta)
+		// STATUS:2 -> Got IP (ï¿½xito)
+		// STATUS:3 -> Connected (ï¿½xito, socket abierto)
+		// STATUS:5 -> WiFi Disconnected (Aï¿½n no conecta)
 		enviarComandoAT("AT+CIPSTATUS", resp, sizeof(resp), 1000);
 
 		if(strstr(resp, "STATUS:2") != NULL || strstr(resp, "STATUS:3") != NULL){
-			printf("\r\n[ESP][INIT] ¡WiFi Conectado y con IP!\r\n");
+			printf("\r\n[ESP][inicializarESP] WiFi Conectado y con IP!\r\n");
 			enviarComandoAT("AT+CIFSR", resp, sizeof(resp), 1000);
 			display_println("WiFi CONECTADO", 50);
 			display_update();
@@ -99,36 +97,38 @@ bool inicializarESP(uint32_t timeoutMs){
 		delay(1000); // Preguntar cada 1 segundo
 	}
 
+
 	if(conectado){
-		 return true; // Ahora sí estamos listos para usar HTTP
+        printf("\r\n[ESP][inicializarESP] Termina inicializarESP ConexiÃ³n WiFi verificada, listo para usar HTTP\r\n");
+		return true; // Ahora sï¿½ estamos listos para usar HTTP
 	} else {
-		 printf("\r\n[ESP][INIT] Timeout esperando IP. Revise su router.\r\n");
+		 printf("\r\n[ESP][inicializarESP] Timeout esperando IP. Revise su router.\r\n");
 		 display_println("WiFi NO CONECTADO", 36);
 		 display_println("REVISE ROUTER", 50);
 		 display_update();
 		 delay(100);
 	}
 
-	printf("\r\n[ESP][INIT] Sin credenciales WiFi guardadas\r\n");
+	printf("\r\n[ESP][inicializarESP] Sin credenciales WiFi guardadas\r\n");
 	display_println("WiFi NO CONECTADO", 36);
 	display_println("SIN CREDENCIALES", 50);
 	display_update();
 	delay(100);
-	printf("\r\n[ESP][INIT] Habilitando BluFi para provisioning...\r\n");
+	printf("\r\n[ESP][inicializarESP] Habilitando BluFi para provisioning...\r\n");
 
 	// 4) Configurar nombre de BluFi
 	size_t n2 = enviarComandoAT("AT+BLUFINAME=\"cerradura\"", resp, sizeof(resp), 2000);
 	if (n2 > 0){
-		printf("\r\n[ESP][INIT] BLUFINAME respuesta: %s\r\n", resp);
+		printf("\r\n[ESP][inicializarESP] BLUFINAME respuesta: %s\r\n", resp);
 	}
 
 	// 5) Habilitar BluFi
 	size_t n3 = enviarComandoAT("AT+BLUFI=1", resp, sizeof(resp), 2000);
 	if (n3 > 0){
-		printf("\r\n[ESP][INIT] BLUFI=1 respuesta: %s\r\n", resp);
-		printf("\r\n[ESP][INIT] Use la app ESP BluFi para configurar WiFi\r\n");
+		printf("\r\n[ESP][inicializarESP] BLUFI=1 respuesta: %s\r\n", resp);
+		printf("\r\n[ESP][inicializarESP] Use la app ESP BluFi para configurar WiFi\r\n");
 	}
-
+    printf ("\r\n[ESP][inicializarESP] Fin de inicializarESP, BluFi habilitado\r\n");
 	return false;
 
 }
@@ -173,20 +173,20 @@ bool resetearCredencialesESP(void){
     return false;
 }
 
-// Función auxiliar para buscar valores ignorando espacios
+// Funciï¿½n auxiliar para buscar valores ignorando espacios
 // Busca la clave (ej: "codigo") y extrae el valor entre comillas
 static void buscarValorJSON(const char *fuente, const char *fin, const char *clave, char *destino, size_t maxLen) {
     char keyPatron[30];
-    sprintf(keyPatron, "\"%s\"", clave); // Crear patrón: "clave"
+    sprintf(keyPatron, "\"%s\"", clave); // Crear patrï¿½n: "clave"
 
     const char *k = strstr(fuente, keyPatron);
     if (!k || k >= fin) return; // Clave no encontrada
 
-    // Buscar los dos puntos ':' después de la clave
+    // Buscar los dos puntos ':' despuï¿½s de la clave
     const char *dosPuntos = strchr(k + strlen(keyPatron), ':');
     if (!dosPuntos || dosPuntos >= fin) return;
 
-    // Buscar la comilla de apertura del valor '"' después de los dos puntos
+    // Buscar la comilla de apertura del valor '"' despuï¿½s de los dos puntos
     const char *inicioValor = strchr(dosPuntos, '\"');
     if (!inicioValor || inicioValor >= fin) return;
 
@@ -207,18 +207,18 @@ static size_t parsearJSONPins(const char *json, size_t jsonLen, PinUsuario_t *pi
 
     printf("\r\n[ESP][JSON] Parseando %u bytes (Modo Robusto)...\r\n", (unsigned)jsonLen);
 
-    // 1. Buscar dónde empieza el array "pins"
+    // 1. Buscar dï¿½nde empieza el array "pins"
     // Buscamos solo "pins" para ser tolerantes a espacios antes de : o [
     const char *keyPins = strstr(ptr, "\"pins\"");
     if (!keyPins) {
-        printf("[ERROR] No se encontró la clave \"pins\"\r\n");
+        printf("[ERROR] No se encontrï¿½ la clave \"pins\"\r\n");
         return 0;
     }
     
-    // Buscamos el corchete de apertura '[' después de "pins"
+    // Buscamos el corchete de apertura '[' despuï¿½s de "pins"
     const char *arrayStart = strchr(keyPins, '[');
     if (!arrayStart || arrayStart >= end) {
-        printf("[ERROR] No se encontró el inicio del array '['\r\n");
+        printf("[ERROR] No se encontrï¿½ el inicio del array '['\r\n");
         return 0;
     }
     
@@ -228,17 +228,17 @@ static size_t parsearJSONPins(const char *json, size_t jsonLen, PinUsuario_t *pi
     while (ptr < end && count < maxPins) {
         // Buscar inicio de objeto '{'
         const char *objStart = strchr(ptr, '{');
-        if (!objStart || objStart >= end) break; // No hay más objetos
+        if (!objStart || objStart >= end) break; // No hay mï¿½s objetos
 
         // Buscar fin de objeto '}'
         const char *objEnd = strchr(objStart, '}');
         if (!objEnd || objEnd >= end) break; // JSON malformado
 
-        // --- EXTRACCIÓN DE DATOS ---
+        // --- EXTRACCIï¿½N DE DATOS ---
         PinUsuario_t pin;
         memset(&pin, 0, sizeof(pin));
         
-        // Usamos la función auxiliar que ignora los espacios
+        // Usamos la funciï¿½n auxiliar que ignora los espacios
         buscarValorJSON(objStart, objEnd, "codigo", pin.codigo, PIN_LENGTH);
         buscarValorJSON(objStart, objEnd, "rfid", pin.rfid, 19);
         buscarValorJSON(objStart, objEnd, "huella", pin.huella, 4);
@@ -258,14 +258,14 @@ static size_t parsearJSONPins(const char *json, size_t jsonLen, PinUsuario_t *pi
             }
         }
 
-        // Solo guardamos si tiene código
+        // Solo guardamos si tiene cï¿½digo
         if (strlen(pin.codigo) > 0) {
             pinsOut[count] = pin;
             printf("  -> Usuario %d: %s (%s)\r\n", count+1, pin.codigo, pin.tag);
             count++;
         }
 
-        // Avanzar puntero después de este objeto
+        // Avanzar puntero despuï¿½s de este objeto
         ptr = objEnd + 1;
     }
 
@@ -286,11 +286,11 @@ size_t espHTTPGetPins(PinUsuario_t *pinsOut, size_t maxPins, uint32_t timeoutMs)
     printf("\r\n[ESP] Solicitando lista de usuarios (Modo TCP)...\r\n");
     
     if (!espRawHTTPGet("/syncPins/?allPins=true", httpResp, sizeof(httpResp))) {
-        printf("\r\n[ESP][ERROR] Falló la descarga TCP\r\n");
+        printf("\r\n[ESP][ERROR] Fallï¿½ la descarga TCP\r\n");
         return 0;
     }
 
-    // Extraer JSON del body (buscar primer '{' y último '}')
+    // Extraer JSON del body (buscar primer '{' y ï¿½ltimo '}')
     const char *jsonStart = NULL;
     const char *jsonEnd = NULL;
     size_t len = strlen(httpResp); // Calculamos longitud de lo recibido
@@ -304,13 +304,13 @@ size_t espHTTPGetPins(PinUsuario_t *pinsOut, size_t maxPins, uint32_t timeoutMs)
     
     if(!jsonStart || !jsonEnd || jsonEnd < jsonStart){
         printf("\r\n[ESP][ERROR] JSON no encontrado en la respuesta\r\n");
-        // Debug: Imprimir lo que llegó para ver si es un error HTML
+        // Debug: Imprimir lo que llegï¿½ para ver si es un error HTML
         // printf("%s\n", httpResp);
         return 0;
     }
     
     size_t jsonLen = (size_t)(jsonEnd - jsonStart + 1);
-    printf("\r\n[ESP] JSON válido encontrado: %u bytes\r\n", (unsigned)jsonLen);
+    printf("\r\n[ESP] JSON vï¿½lido encontrado: %u bytes\r\n", (unsigned)jsonLen);
     
     // Parsear JSON y llenar array
     return parsearJSONPins(jsonStart, jsonLen, pinsOut, maxPins);
@@ -331,7 +331,10 @@ size_t enviarComandoAT(const char *cmd, char *respuesta, size_t maxLen, uint32_t
     size_t pos = 0;
     uint8_t byte;
     uint32_t lastByteTime = start;
-
+    // Para evitar esperar todo el timeout incluso cuando la respuesta ya llegÃ³,
+    // salimos si no llegan bytes nuevos durante `idleTimeoutMs` despuÃ©s de
+    // haber recibido al menos un byte.
+    const uint32_t idleTimeoutMs = 1000; // tiempo en ms sin recibir datos para considerar fin
     while ((tickRead() - start) < timeoutMs){
         if (uartReadByte(ESP_UART, &byte)){
             if (pos < (maxLen - 1)){
@@ -342,8 +345,14 @@ size_t enviarComandoAT(const char *cmd, char *respuesta, size_t maxLen, uint32_t
                 break;
             }
             lastByteTime = tickRead();
+        } else {
+            // Si ya recibimos datos y llevamos un rato sin bytes nuevos, asumimos fin
+            if (pos > 0 && (tickRead() - lastByteTime) > idleTimeoutMs) {
+                break;
+            }
+            // PequeÃ±a espera para no busy-loop
+            delay(1);
         }
-        // Nota: evitamos salida anticipada; dejamos que el timeout global gobierne
     }
 
     respuesta[pos] = '\0';
@@ -395,16 +404,16 @@ bool espEnviarNuevoRFID(const char* pin, const char* rfidHex) {
     char respuesta[256]; // Buffer para lo que responda el servidor
 
     // Construimos la URL. Ej: /api/asignar-rfid?pin=1234&rfid=A1B2C3D4
-    // Asegurate que tu servidor espere estos parámetros
+    // Asegurate que tu servidor espere estos parï¿½metros
     sprintf(ruta, "/update-rfid?pin=%s&rfid=%s", pin, rfidHex);
 
     printf("\r\n[ESP] Subiendo RFID a la nube: PIN=%s UID=%s\r\n", pin, rfidHex);
 
-    // Reutilizamos tu función de GET (asumiendo que usas espRawHTTPGet o similar)
-    // Si tu servidor requiere POST, habría que adaptar esta parte.
+    // Reutilizamos tu funciï¿½n de GET (asumiendo que usas espRawHTTPGet o similar)
+    // Si tu servidor requiere POST, habrï¿½a que adaptar esta parte.
     if (espRawHTTPGet(ruta, respuesta, sizeof(respuesta))) {
 
-        // Verificamos si el servidor respondió OK (HTTP 200)
+        // Verificamos si el servidor respondiï¿½ OK (HTTP 200)
         // O si devuelve un JSON tipo {"status":"ok"}
         if (strstr(respuesta, "200 OK") != NULL || strstr(respuesta, "\"ok\"") != NULL) {
             printf("[ESP] Registro en nube EXITOSO.\r\n");
@@ -446,9 +455,9 @@ double espObtenerTiempoServidor(void) {
     // 1. Descargamos todo (Headers + Body)
     if (espRawHTTPGet("/check-status", resp, sizeof(resp))) {
 
-        // 2. Buscamos dónde empieza el JSON real (para ignorar headers)
+        // 2. Buscamos dï¿½nde empieza el JSON real (para ignorar headers)
         char *jsonBody = strchr(resp, '{');
-        if (jsonBody == NULL) return -1.0; // No llegó JSON
+        if (jsonBody == NULL) return -1.0; // No llegï¿½ JSON
 
         // 3. Buscamos la etiqueta DENTRO del JSON
         char *ptr = strstr(jsonBody, "\"last_update\"");
@@ -457,19 +466,19 @@ double espObtenerTiempoServidor(void) {
             if(ptr) {
                 ptr++; // Saltamos los dos puntos
 
-                // atof es inteligente: lee números y para cuando encuentra
+                // atof es inteligente: lee nï¿½meros y para cuando encuentra
                 // una coma, un espacio o una llave de cierre '}'
                 double val = atof(ptr);
 
-                if (val > 1000000.0) return val; // Validación mínima de fecha coherente
+                if (val > 1000000.0) return val; // Validaciï¿½n mï¿½nima de fecha coherente
             }
         }
     }
     return -1.0; // Error
 }
 
-// Función genérica para hacer GET usando TCP puro (Más compatible)
-// Retorna: true si recibió respuesta, false si falló.
+// Funciï¿½n genï¿½rica para hacer GET usando TCP puro (Mï¿½s compatible)
+// Retorna: true si recibiï¿½ respuesta, false si fallï¿½.
 bool espRawHTTPGet(const char *path, char *bufferResp, int bufferSize) {
     char cmd[256];
     char aux[128];
@@ -488,8 +497,8 @@ bool espRawHTTPGet(const char *path, char *bufferResp, int bufferSize) {
         return false;
     }
 
-    // 2. ARMAR LA PETICIÓN HTTP
-    // Es vital poner \r\n al final de cada línea y una línea vacía al final
+    // 2. ARMAR LA PETICIï¿½N HTTP
+    // Es vital poner \r\n al final de cada lï¿½nea y una lï¿½nea vacï¿½a al final
     char request[300];
     sprintf(request, "GET %s HTTP/1.1\r\nHost: %s:%s\r\nConnection: close\r\n\r\n",
             path, SERVER_IP, SERVER_PORT);
@@ -505,7 +514,7 @@ bool espRawHTTPGet(const char *path, char *bufferResp, int bufferSize) {
     }
 
     // 4. ENVIAR LOS DATOS REALES
-    // Aquí recibimos la respuesta del servidor
+    // Aquï¿½ recibimos la respuesta del servidor
     memset(bufferResp, 0, bufferSize); // Limpiar buffer destino
 
     // Enviamos request y esperamos hasta 5 segundos la respuesta

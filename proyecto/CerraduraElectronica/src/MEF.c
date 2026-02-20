@@ -11,7 +11,6 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdint.h>
-//#include "rc522.h"
 #include "rc522_drv.h"
 
 /* ---------------------------------------------------------------------------
@@ -36,13 +35,12 @@ const long int INTERVALO_HUELLA_MS = 600;
 --------------------------------------------------------------------------- */
 
 volatile bool eventoPresencia = false;   // Presencia detectada (GPIO0[12] o TEC3)
-volatile bool eventoRFID = false;        // Pulso de RFID (GPIO2[5] o TEC2)
 
 /* ---------------------------------------------------------------------------
    Modo de bajo consumo
 --------------------------------------------------------------------------- */
 static void entrarModoSleep(void){
-    //printf("\r\n[SLEEP] Entrando en modo de bajo consumo...\r\n");
+    printf("\r\n[SLEEP] Entrando en modo de bajo consumo...\r\n");
 	display_clear();
 	display_println("ENTRANDO EN MODO", 10);
 	display_println("BAJO CONSUMO", 30);
@@ -128,72 +126,48 @@ static void entrarModoSleep(void){
 	}
 }
 
-/* Canal 0: Presencia (vector nombrado como GPIO0_IRQHandler en este BSP) */
+// Canal 0: Presencia (vector nombrado como GPIO0_IRQHandler)
 void GPIO0_IRQHandler(void){
     Chip_PININT_ClearIntStatus(LPC_GPIO_PIN_INT, PININTCH0);
     eventoPresencia = true;
     printf("\r\n[INTERRUPCIÓN] Presencia detectada\r\n");
 }
 
-///* Canal 1: RFID interrupt */
-// void PIN_INT1_IRQHandler(void){
-// 	// 1. Limpiamos la marca de interrupci�n para poder recibir la siguiente
-//     Chip_PININT_ClearIntStatus(LPC_GPIO_PIN_INT, PININTCH1);
-//     // 2. Avisamos al programa principal
-//     eventoRFID = true;
-//     //display_clear();
-//     //display_println("RFID DETECTADO", 30);
-//     //display_update();
-// 	printf("\r\n[INTERRUPCIÓN] RFID detectado\r\n");
-// }
-
-
-
 /* ---------------------------------------------------------------------------
    Inicialización de la MEF
 --------------------------------------------------------------------------- */
 void mefInit(void){
+	printf("\r\n[INICIALIZACION] Iniciando MEF...\r\n");
     configurarPines();
-    // Inicializar el lector RFID
-    //PCD_Init();
-    //PCD_ActivarIRQ();
-    //configurarInterrupcionRFID();
-
+	printf("\r\n[INICIALIZACION] Pines configurados\r\n");
     if (ALERTAS_ENABLE) alertasInit();
     if (SENSOR_WIFI_ENABLE) {
     	display_clear();
 		display_println("CONECTANDO WIFI...", 20);
 		display_update();
     	espATInit(115200);
-    	while(!conectado){
+	    // Intentar inicializar el ESP una vez y luego reintentar un par de veces
+	    bool wifiOk = inicializarESP(10000);
+	    while(!wifiOk){
 			display_clear();
-			display_println("CONECTANDO WIFI...", 20);
+			display_println("REINTENTO WIFI...", 20);
 			display_update();
-			inicializarESP(10000);
-    	}
-    	sincronizarConServidor();
+			wifiOk = inicializarESP(5000);
+	    }
+	    if (wifiOk) {
+			sincronizarConServidor();
+	    } else {
+			display_clear();
+			display_println("WIFI NO DISPONIBLE", 10);
+			display_update();
+			// No bloquear aquí; el sistema seguirá funcionando en modo offline
+	    }
     }
     if (SENSOR_HUELLA_ENABLE) {as608Init(0); as608SetDebug(1); as608ScanReset();}
                         // Nivel de debug fingerprint (1=básico, 2=detallado) // Preparar mini MEF del AS608
     configurarInterrupcionPRESENCIA();
     NVIC_DisableIRQ(PIN_INT0_IRQn);
 
-    // --- BLOQUE DE DIAGN�STICO ---
-   	//printf("\r\n[DIAGNOSTICO] Verificando hardware RC522...\r\n");
-
-   	// Leemos el registro de versi�n (Direcci�n 0x37)
-   	//uint8_t version = PCD_ReadRegister(VersionReg);
-
-   	//printf("[DIAGNOSTICO] Version Hex: 0x%02X\r\n", version);
-
-   	// if (version == 0x00 || version == 0xFF) {
-   	// 	printf("[ERROR CRITICO] EL MICRO NO VE AL SENSOR.\r\n");
-   	// 	printf("CAUSAS: Cables sueltos, MISO/MOSI invertidos o falta energia.\r\n");
-   	// 	while(1); // Bloqueamos aqu� porque no tiene sentido seguir
-   	// } else {
-   	// 	printf("[EXITO] Comunicacion SPI Correcta. Chip detectado.\r\n");
-   	// }
-   	// -----------------------------
 	//Inicializaciion RFID
 	printf("[INICIALIZACION] Iniciando RC522...\r\n");
 	rc522_hw_init();
@@ -296,6 +270,7 @@ void mefUpdate(void){
 				} else if (tickRead() - ultimaPresencia > TIMEOUT_MS){
 					printf("\r\n[TIMEOUT] Sin actividad por %d ms, durmiendo\r\n", TIMEOUT_MS);
 					estadoActual = REPOSO;
+					break;
 			}
 			
 			// RFID: si detecta tarjeta, pasar a validar
@@ -531,6 +506,7 @@ void mefUpdate(void){
 							display_println("USA LA APP", 25);
 							display_println("\"ESP BluFI\"", 40);
 							display_update();
+							delay(5000);
 						} else {
 							//printf("\r\n[ADMIN] Error al resetear ESP\r\n");
 							display_clear();
@@ -539,6 +515,7 @@ void mefUpdate(void){
 						}
 						delay(1000);
 						display_clear();
+						ultimaPresencia = tickRead();
 						estadoActual = ESPERANDO_ACCION;
 						break;
 
