@@ -244,6 +244,7 @@ void mefUpdate(void){
 			if (resultado == 1){ // PIN completo, pasar a validar
 				ultimaPresencia = tickRead(); 
 				estadoActual = VALIDAR;
+				break;
 			} else if (resultado == -1){ // Acceso a menú admin por tecla '*'
 					display_clear();
 					display_println("SEGURIDAD", 10);
@@ -311,7 +312,6 @@ void mefUpdate(void){
 
             // Mini MEF del AS608: pasos breves en cada ciclo
             {
-
 
                 // Programar inicio de escaneo cada cierto intervalo
                 if (!escaneoActivo && (tickRead() - agendaHuella) >= INTERVALO_HUELLA_MS){
