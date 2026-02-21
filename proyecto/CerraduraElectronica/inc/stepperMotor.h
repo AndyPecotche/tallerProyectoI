@@ -27,7 +27,7 @@
  * Nota: Este valor corresponde a paso completo (full-step).
  * 		 Si se activa microstepping en el DRV8825, la cantidad de pasos por vuelta efectiva será: 200 * (factor de microstepping).
  */
-#define STEPS 200
+#define STEPS 100
 
 /**Variables para definir el pulso en microsegundos
  * STEP_PULSE_HIGH + STEP_PULSE_LOW = periodo del pulso(T)

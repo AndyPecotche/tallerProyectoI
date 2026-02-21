@@ -357,6 +357,11 @@ void mefUpdate(void){
 				display_println(buffer,10);
 				display_update();
 				alertaExito();
+				if (!OMITIR_MOTOR) {
+					abrirCerradura();
+				} else {
+					printf("\r\n[OMITIR MOTOR] Simulando apertura de cerradura\r\n");
+				}
 				estadoActual = SENSOR_CIERRE;
 				rfid[0] = '\0'; // Limpiar RFID leído
 			}else{
