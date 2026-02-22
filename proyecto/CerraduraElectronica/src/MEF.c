@@ -365,11 +365,13 @@ void mefUpdate(void){
 				estadoActual = SENSOR_CIERRE;
 				rfid[0] = '\0'; // Limpiar RFID leído
 			}else{
+				alertaError();
 				display_clear();
 				display_println("ACCESO DENEGADO", 20);
 				display_println("RFID NO REGISTRADO", 35);
 				display_update();
-				alertaError();
+				delay(1500);
+				display_clear();
 				tecladoReset();
 				estadoActual = ESPERANDO_ACCION;
 			}
