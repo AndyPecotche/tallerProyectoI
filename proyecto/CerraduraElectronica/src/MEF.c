@@ -754,95 +754,114 @@ void mefUpdate(void){
 		}
 
          case REGISTRAR_HUELLA: {
-					int reintentosFallidos=0;
-                     display_clear();
-                     display_println("REGISTRAR HUELLA", 10);
-                     display_println("INGRESE PIN USUARIO", 22);
-                     display_update();
+				int intentos=0;
+				display_clear();
+				display_println("REGISTRAR HUELLA", 10);
+				display_println("INGRESE PIN USUARIO", 22);
+				display_update();
 
-                     char pinValidado[6] = {0};
-                     long int timer = tickRead();
+				char pinValidado[6] = {0};
+				long int timer = tickRead();
+				// 1. Pedir PIN
+				while (1) {
+					display_clear();
+					display_println("INGRESE PIN USUARIO", 30);
+					display_update();
+					while (1) {
+						if (tecladoLeerPin(pinValidado, &timer) == 1) break;
+						if ((tickRead() - timer) > 15000) { // Timeout
+							display_clear();
+							ultimaPresencia = tickRead();
+							estadoActual = ESPERANDO_ACCION;
+							break;
+						}
+						delay(50);
+					}
+					if (validarPin(pinValidado)) break; // Si el PIN es válido, salimos del bucle
+					intentos++;
+					alertaError();
+					display_clear(); display_println("PIN INVALIDO", 20);
+					char buffer[40];
+					sprintf(buffer, "INTENTOS = %d de 3", intentos);
+					display_println(buffer, 40);
+					display_update();
+					delay(1500);
+					if (intentos >= 3) {
+						display_clear();
+						display_println("DEMASIADOS INTENTOS", 20);
+						delay(2000);
+						display_clear();
+						ultimaPresencia = tickRead();
+						estadoActual = ESPERANDO_ACCION;
+						break;
+					}
+				}
+				if (estadoActual == ESPERANDO_ACCION) break;
 
-                     // 1. Pedir PIN
-                     while (1) {
-                         if (tecladoLeerPin(pinValidado, &timer) == 1) break;
-                         if ((tickRead() - timer) > 15000) { // Timeout
-                        	 display_clear();
-                        	 ultimaPresencia = tickRead();
-                             estadoActual = ESPERANDO_ACCION;
-                             break;
-                         }
-                         delay(50);
-                     }
-                     if (estadoActual == ESPERANDO_ACCION) break;
+				// 2. Validar y Obtener ID
+				char idHuellaStr[5] = {0};
+				if (obtenerHuellaAsignadaPorPin(pinValidado, idHuellaStr)) {
+					short int idObjetivo = (uint16_t)atoi(idHuellaStr);
+					display_clear();
+					display_println("COLOCAR DEDO EN", 20);
+					display_println("SENSOR", 30);
+					char buff[20];
+					sprintf(buff, "ID ASIGNADO: %d", idObjetivo);
+					display_println(buff, 50);
+					display_update();
+					delay(2000);
+					// 3. Enrolar en Sensor (Funci�n bloqueante del driver AS608)
+					char idResultado[5] = {0};
 
-                     // 2. Validar y Obtener ID
-                     char idHuellaStr[5] = {0};
+					intentos = 0;
+					while (intentos < 5) {
+						if (as608EnrollAtId(idObjetivo, idResultado)) break;
+						intentos++;
+						alertaError();
+						display_clear();
+						display_println("ERROR REGISTRANDO", 20);
+						char buffer[40];
+						sprintf(buffer, "INTENTOS = %d de 5", intentos);
+						display_println(buffer, 40);
+						display_update();
+						delay(1500);
+					}
+					if (intentos >= 5) {
+						display_clear();
+						display_println("FALLÓ REGISTRO", 20);
+						display_update();
+						delay(2000);
+						display_clear();
+						ultimaPresencia = tickRead();
+						estadoActual = ESPERANDO_ACCION;
+						break;
+					}
 
-                     if (validarPin(pinValidado)) {
+					// 4. Guardar Localmente
+					asociarHuellaaPin(pinValidado, idResultado);
+					display_clear();
+					display_println("HUELLA GUARDADA", 10);
+					display_println("SUBIENDO...", 30);
+					display_update();
+					alertaExito();
+					delay(1500);
+					// 5. Sincronizar con Servidor
+					if (espEnviarNuevaHuella(pinValidado, idResultado)) {
+						display_println("NUBE: OK", 50);
+					} else {
+						display_println("NUBE: ERROR", 50);
+					}
+					display_update();
+					estadoActual = ESPERANDO_ACCION;
 
-                         // Usamos la nueva funci�n que genera ID si no existe
-                         if (obtenerHuellaAsignadaPorPin(pinValidado, idHuellaStr)) {
-                            short int idObjetivo = (uint16_t)atoi(idHuellaStr);
-                             display_clear();
-                             display_println("REGISTRAR HUELLA:", 10);
-                             display_println("COLOCAR DEDO EN", 20);
-                             display_println("SENSOR", 30);
-                             char buff[20];
-                             sprintf(buff, "ID ASIGNADO: %d", idObjetivo);
-                             display_println(buff, 50);
-                             display_update();
-                             delay(2000);
-                             // 3. Enrolar en Sensor (Funci�n bloqueante del driver AS608)
-                             char idResultado[5] = {0};
-                             if (as608EnrollAtId(idObjetivo, idResultado)) {
-
-                                 // 4. Guardar Localmente
-                                 asociarHuellaaPin(pinValidado, idResultado);
-
-                                 display_clear();
-                                 display_println("HUELLA GUARDADA", 10);
-                                 display_println("SUBIENDO...", 30);
-                                 display_update();
-                                 alertaExito();
-                                 // 5. Sincronizar con Servidor
-                                 if (espEnviarNuevaHuella(pinValidado, idResultado)) {
-                                      display_println("NUBE: OK", 50);
-                                 } else {
-                                      display_println("NUBE: ERROR", 50);
-                                 }
-                                 display_update();
-								 reintentosFallidos=0;
-								 estadoActual = ESPERANDO_ACCION;
-
-                             }  else {
-                                 display_clear();
-                                 display_println("ERROR SENSOR", 20);
-                                 display_println("INTENTE DE NUEVO", 40);
-                                 display_update();
-                                 alertaError();
-								 reintentosFallidos++;
-                             }
-
-                         } else {
-                              display_println("ERROR BASE DATOS", 30);
-                              display_update();
-                         }
-                     } else {
-                         display_clear();
-                         display_println("PIN NO EXISTE", 20);
-                         display_update();
-
-                     }
-                     delay(1500);
-                     display_clear();
-                     ultimaPresencia = tickRead();
-					 
-					 if (reintentosFallidos >= 4) {
-						reintentosFallidos=0;
-                     	estadoActual = ESPERANDO_ACCION;
-					 }
-                     break;
-                 }
+				} else {
+					display_println("ERROR BASE DATOS", 30);
+					display_update();
+				}
+				delay(1500);
+				display_clear();
+				ultimaPresencia = tickRead();
+				break;
+        	}
     }
 }
