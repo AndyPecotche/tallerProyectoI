@@ -675,45 +675,53 @@ void mefUpdate(void){
         // Se elimina LEER_HUELLA como estado separado; se integra polling en LEER_PIN
 
         case REGISTRAR_RFID: {
-			int reintentosFallidos=0;
+			int intentos=0;
 			display_clear();
 			display_println("REGISTRAR TARJETA", 20);
-			display_println("INGRESE PIN USUARIO", 30);
 			display_update();
-
+			delay(1500);
 			char pinValidado[6] = {0};
 			long int timer = tickRead();
-
 			// 1. Pedir PIN
 			while (1) {
-				if (tecladoLeerPin(pinValidado, &timer) == 1) break;
-				if ((tickRead() - timer) > 15000) { // Timeout
+				display_clear();
+				display_println("INGRESE PIN USUARIO", 30);
+				display_update();
+				while (1) {
+					if (tecladoLeerPin(pinValidado, &timer) == 1) break;
+					if ((tickRead() - timer) > 15000) { // Timeout
+						display_clear();
+						ultimaPresencia = tickRead();
+						estadoActual = ESPERANDO_ACCION;
+						break;
+					}
+					delay(50);
+				}
+				if (validarPin(pinValidado)) break; // Si el PIN es válido, salimos del bucle
+				intentos++;
+				alertaError();
+				display_clear(); display_println("PIN INVALIDO", 20);
+				char buffer[40];
+				sprintf(buffer, "INTENTOS = %d de 3", intentos);
+				display_println(buffer, 40);
+				display_update();
+				delay(1500);
+				if (intentos >= 3) {
+					display_clear();
+					display_println("DEMASIADOS INTENTOS", 20);
+					delay(2000);
 					display_clear();
 					ultimaPresencia = tickRead();
 					estadoActual = ESPERANDO_ACCION;
 					break;
 				}
-				delay(50);
 			}
+			if (estadoActual == ESPERANDO_ACCION) break;
 			timer = tickRead();
-			while (!validarPin(pinValidado)) {
-				reintentosFallidos++;
-				display_clear();
-				display_println("PIN NO EXISTE", 20);
-				display_println("INTENTE DE NUEVO", 40);
-				display_update();
-				delay(3000);
-				display_clear();
-				if ((tickRead() - timer) > 15000 || reintentosFallidos >= 3) { // Timeout o demasiados intentos{
-					ultimaPresencia = tickRead();
-					estadoActual = ESPERANDO_ACCION;
-					break;
-				}
-			}
 			display_println("ACERQUE TARJETA", 20);
 			display_update();
 			while (!leer_rfid_str(rfid, sizeof(rfid))) {
-				if ((tickRead() - timer) > 20000) { // Timeout largo para acercar tarjeta
+				if ((tickRead() - timer) > 15000) { // Timeout para acercar tarjeta
 					display_clear();
 					ultimaPresencia = tickRead();
 					estadoActual = ESPERANDO_ACCION;
@@ -721,9 +729,9 @@ void mefUpdate(void){
 				}
 				delay(50);
 			}
+			if (estadoActual == ESPERANDO_ACCION) break;
 			alertaExito();
 			printf("\r\n[RFID] Leido: %s\r\n", rfid);
-
 			asociarRFIDaPin(pinValidado, rfid);
 			display_clear();
 			display_println("TARJETA GUARDADA", 20);
