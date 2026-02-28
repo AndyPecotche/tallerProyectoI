@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<html lang="es">
+<head>
+	<meta charset="UTF-8">
+	<title>Panel de Administración</title>
+	<link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
+	<script src="{{ url_for('static', filename='script.js') }}"></script>
+	<script>
+		// Guardamos la versión que tenía el servidor cuando cargó la página
+		var localVersion = {{ server_time }};
+	</script>
+</head>
+<body>
+	<h1>Panel de Control Cerradura</h1>
+	<div class="form-container">
+		<h3>Agregar Nuevo Usuario</h3>
+		<form method="POST">
+			<input type="text" name="tag" placeholder="Nombre (Ej: Juan)" required>
+			<input type="text" name="codigo" placeholder="PIN (Ej: 12345)" class="form-control" required minlength="5" maxlength="5" pattern="[0-9]{5}" title="El PIN debe tener exactamente 5 números">
+			<input type="text" name="rfid" placeholder="RFID Hex (Opcional)">
+			<input type="text" name="huella" placeholder="ID Huella (Opcional)">
+			<button type="submit" class="btn-save">Guardar Usuario</button>
+			{% with messages = get_flashed_messages(with_categories=true) %}
+			{% if messages %}
+			{% for category, message in messages %}
+			  <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+				{{ message }}
+				<button type="button" class="btn-close" onclick="cerrarAlerta(this)">×</button>
+			  </div>
+			{% endfor %}
+			{% endif %}
+			{% endwith %}
+		</form>
+	</div>
+
+	<h3>Usuarios Registrados</h3>
+	<table>
+		<tr>
+			<th>ID</th>
+			<th>Nombre (Tag)</th>
+			<th>PIN</th>
+			<th>RFID</th>
+			<th>Huella ID</th>
+			<th>Acciones</th>
+		</tr>
+		{% for user in usuarios %}
+		<tr>
+			<td>{{ user['id'] }}</td>
+			<td>
+				{{ user['tag'] }}
+				{% if user['id'] == 1 %} <span class="master-badge">MASTER</span> {% endif %}
+			</td>
+			<td>{{ user['codigo'] }}</td>
+			<td>
+				{% if user.rfid %}
+					<span class="badge bg-primary">{{ user.rfid }}</span>
+					
+					<form action="{{ url_for('delete_rfid', user_id=user.id) }}" method="POST" style="display:inline;">
+						<button type="submit" class="btn btn-sm btn-danger btn-delete" onclick="return confirm('¿Quitar RFID a este usuario?')">
+							X
+						</button>
+					</form>
+					
+				{% else %}
+					<span class="text-muted">No asignado</span>
+				{% endif %}
+			</td>
+			<td>{{ user['huella'] }}</td>
+			<td>
+				{% if user['id'] != 1 %}
+				<form action="{{ url_for('delete_user', user_id=user['id']) }}" method="post" onsubmit="return confirm('¿Seguro que deseas eliminar a {{ user.tag }}?');">
+					<button type="submit" class="btn-delete">Eliminar</button>
+				</form>
+				{% else %}
+					<form action="{{ url_for('update_admin_pin') }}" method="POST" style="display: flex; gap: 5px;">
+						<input type="text" name="pin_admin" placeholder="Nuevo PIN" 
+							   required pattern="[0-9]{5}" maxlength="5"
+							   style="width: 80px; padding: 2px;">
+						
+						<button type="submit" class="btn-edit">Cambiar</button>
+					</form>
+				{% endif %}
+			</td>
+		</tr>
+		{% endfor %}
+	</table>
+	<p><strong>Nota:</strong> Al Guardar/eliminar aquí, el usuario tendra/perderá acceso la próxima vez que el ESP32 se sincronice.</p>
+	
+</body>
+</html>
