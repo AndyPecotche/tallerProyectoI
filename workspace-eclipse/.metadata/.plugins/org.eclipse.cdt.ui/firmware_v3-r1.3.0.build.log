@@ -1,0 +1,10 @@
+18:23:20 **** Clean-only build of configuration Default for project firmware_v3-r1.3.0 ****
+make clean 
+  proyecto/CerraduraElectronica/out/proyecto/CerraduraElectronica/src/alertas.o proyecto/CerraduraElectronica/out/proyecto/CerraduraElectronica/src/display.o proyecto/CerraduraElectronica/out/proyecto/CerraduraElectronica/src/teclado.o proyecto/CerraduraElectronica/out/proyecto/CerraduraElectronica/src/rc522_drv.o proyecto/CerraduraElectronica/out/proyecto/CerraduraElectronica/src/espAT.o proyecto/CerraduraElectronica/out/proyecto/CerraduraElectronica/src/as608.o proyecto/CerraduraElectronica/out/proyecto/CerraduraElectronica/src/MEF.o proyecto/CerraduraElectronica/out/proyecto/CerraduraElectronica/src/mef_config.o proyecto/CerraduraElectronica/out/proyecto/CerraduraElectronica/src/validacion.o proyecto/CerraduraElectronica/out/proyecto/CerraduraElectronica/src/stepperMotor.o proyecto/CerraduraElectronica/out/proyecto/CerraduraElectronica/src/CerraduraElectronica.o proyecto/CerraduraElectronica/out/libs/cmsis_core//src/armv7m_startup.o proyecto/CerraduraElectronica/out/libs/editline//src/editline.o proyecto/CerraduraElectronica/out/libs/sys_newlib//src/system.o   
+CLEAN
+
+Clean program: proyecto/CerraduraElectronica
+Board: edu_ciaa_nxp
+
+18:23:21 Build Finished. 0 errors, 0 warnings. (took 280ms)
+

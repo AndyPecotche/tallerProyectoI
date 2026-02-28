@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Delete resource &apos;firmware_v3-r1.3.0/examples/CerraduraElectronica&apos;" deleteContents="false" description="Delete resource &apos;firmware_v3-r1.3.0/examples/CerraduraElectronica&apos;" element1="/firmware_v3-r1.3.0/examples/CerraduraElectronica" flags="7" id="org.eclipse.ltk.core.refactoring.delete.resources" resources="1" stamp="1764256341669"/>
+</session>

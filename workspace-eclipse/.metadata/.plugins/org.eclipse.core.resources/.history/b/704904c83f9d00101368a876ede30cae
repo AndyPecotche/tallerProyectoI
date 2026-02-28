@@ -1,0 +1,2 @@
+PROGRAM_PATH = examples/cpp
+PROGRAM_NAME = program.cpp

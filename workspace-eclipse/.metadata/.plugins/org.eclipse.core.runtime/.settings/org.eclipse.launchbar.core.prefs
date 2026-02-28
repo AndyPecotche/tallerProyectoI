@@ -1,0 +1,8 @@
+LaunchTargetManager/configs/firmware_v3-r1.3.0\ Default=org.eclipse.launchbar.core.launchTargetType.local\:Local
+LaunchTargetManager/org.eclipse.launchbar.core.launchTargetType.local,Local/arch=x86_64
+LaunchTargetManager/org.eclipse.launchbar.core.launchTargetType.local,Local/name=Local
+LaunchTargetManager/org.eclipse.launchbar.core.launchTargetType.local,Local/os=linux
+configDescList=org.eclipse.launchbar.core.descriptorType.default\:firmware_v3-r1.3.0 Default
+eclipse.preferences.version=1
+org.eclipse.launchbar.core.descriptorType.default\:firmware_v3-r1.3.0\ Default/activeLaunchMode=debug
+org.eclipse.launchbar.core.descriptorType.default\:firmware_v3-r1.3.0\ Default/activeLaunchTarget=org.eclipse.launchbar.core.launchTargetType.local\:Local
