@@ -13,7 +13,7 @@
 #define SENSOR_HUELLA_ENABLE       1      /* 1=habilitar sensor de huella */
 
 // 1. Define tu IP y Puerto aqu�
-#define SERVER_IP "192.168.70.87"
+#define SERVER_IP "10.42.46.87"
 #define SERVER_PORT "8000"
 /* URL del servidor para sincronización */
 #define ESP_SERVER_URL "http://" SERVER_IP ":" SERVER_PORT "/syncPins/?allPins=true"

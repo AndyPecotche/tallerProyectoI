@@ -226,11 +226,29 @@ bool obtenerHuellaAsignadaPorPin(const char *pin, char *idBuffer) {
             if (strlen(listaPins[i].huella) > 0) {
                 strcpy(idBuffer, listaPins[i].huella);
             }
-            // B) Si est� vac�o, generamos uno nuevo autom�tico
+            // B) Si está vacío, generamos uno nuevo automático
             else {
-                // Generamos ID basado en su posici�n (�ndice + 1)
-                // Ej: El usuario en la posici�n 2 tendr� ID "0003"
-                sprintf(idBuffer, "%04d", i + 1);
+                // Buscamos el ID libre más bajo a partir de 1
+                int idLibre = 1;
+                bool idEncontrado = false;
+                char tempId[10];
+                
+                while (!idEncontrado) {
+                    idEncontrado = true;
+                    sprintf(tempId, "%04d", idLibre);
+                    
+                    // Verificamos si alguien más ya usa este ID
+                    for (int j = 0; j < MAX_PINS; j++) {
+                        if (listaPins[j].activo && strcmp(listaPins[j].huella, tempId) == 0) {
+                            idEncontrado = false;
+                            idLibre++;
+                            break; // El ID está en uso, probamos el siguiente
+                        }
+                    }
+                }
+                
+                // Asignamos el ID libre que encontramos
+                sprintf(idBuffer, "%04d", idLibre);
             }
             return true; // Encontrado y con ID listo
         }
